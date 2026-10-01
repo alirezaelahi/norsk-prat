@@ -258,21 +258,12 @@ class MLXBackend:
     explains = False  # 4B model's corrections are good, its explanations are not
 
     def __init__(self, model: str = config.MLX_MODEL):
-        from mlx_lm import load
+        from .local_lm import get_local_lm
 
-        self.model_name = model
-        self.model, self.tokenizer = load(model)
-        self._lock = threading.Lock()
+        self.lm = get_local_lm(model)
 
     def complete(self, system: str, messages: list[dict], max_tokens: int, temperature: float) -> str:
-        from mlx_lm import generate
-        from mlx_lm.sample_utils import make_sampler
-
-        prompt = self.tokenizer.apply_chat_template(
-            [{"role": "system", "content": system}, *messages], add_generation_prompt=True, tokenize=False
-        )
-        with self._lock:  # Metal work is not safe to interleave across threads
-            return generate(self.model, self.tokenizer, prompt=prompt, max_tokens=max_tokens, sampler=make_sampler(temp=temperature))
+        return self.lm.complete(system, messages, max_tokens, temperature)
 
 
 def _has_claude_credentials() -> bool:

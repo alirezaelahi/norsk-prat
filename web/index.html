@@ -11,6 +11,10 @@
   <header class="topbar">
     <button id="menuBtn" class="icon-btn only-mobile" aria-label="Meny">☰</button>
     <div class="brand">Prat<span>norsk samtaletrening</span></div>
+    <nav class="modes" role="tablist">
+      <button class="mode active" data-mode="live" role="tab">🎧 Samtale</button>
+      <button class="mode" data-mode="practice" role="tab">✍️ Øving</button>
+    </nav>
     <div id="status" class="status" title="Modellstatus">Laster modeller…</div>
   </header>
 
@@ -33,9 +37,14 @@
           <label for="speed">Tempo <span id="speedVal">1.0×</span></label>
           <input id="speed" type="range" min="0.6" max="1.3" step="0.05" value="1" />
         </div>
+        <div class="row live-only">
+          <label for="endMs">Ventetid før svar <span id="endMsVal">800 ms</span></label>
+          <input id="endMs" type="range" min="400" max="2000" step="50" value="800" />
+          <span class="muted small">Hvor lenge jeg venter på stillhet før jeg svarer. Øk hvis jeg avbryter deg.</span>
+        </div>
         <label class="toggle"><input id="showText" type="checkbox" checked /> Vis norsk tekst</label>
-        <label class="toggle"><input id="autoSend" type="checkbox" checked /> Send tale automatisk</label>
-        <label class="toggle"><input id="autoFeedback" type="checkbox" checked /> Vis rettelser</label>
+        <label class="toggle practice-only"><input id="autoSend" type="checkbox" checked /> Send tale automatisk</label>
+        <label class="toggle practice-only"><input id="autoFeedback" type="checkbox" checked /> Vis rettelser</label>
       </section>
 
       <section class="tabs-section">
@@ -48,7 +57,32 @@
       </section>
     </aside>
 
-    <main class="chat-wrap">
+    <main id="liveView" class="live-wrap">
+      <div id="liveGoal" class="goal hidden">
+        <div id="liveGoalText"></div>
+        <button id="liveSummaryBtn" class="small-btn">📋 Oppsummering</button>
+      </div>
+      <div id="hint" class="hint">🎧 Bruk hodetelefoner for best resultat — da hører jeg ikke meg selv. <button class="icon-btn" id="hintClose" aria-label="Lukk">✕</button></div>
+      <div class="stage">
+        <button id="orb" class="orb idle" aria-label="Start samtale">
+          <span class="ring" id="orbRing"></span>
+          <span class="orb-label" id="orbLabel">Trykk for å starte</span>
+        </button>
+        <div id="liveCaption" class="live-caption muted"></div>
+      </div>
+      <div id="transcript" class="transcript"></div>
+      <div class="live-bar">
+        <button id="muteBtn" class="small-btn" disabled>🔇 Demp</button>
+        <form id="liveTextForm" class="live-text"><input id="liveText" placeholder="…eller skriv her" autocomplete="off" disabled /></form>
+        <button id="endBtn" class="small-btn" disabled>⏹ Avslutt</button>
+      </div>
+      <div id="latency" class="latency" title="Forsinkelse per tur (mål: under 1000 ms fra du slutter å snakke)">
+        <div class="lat-head">Forsinkelse</div>
+        <div id="latBody" class="muted small">Ingen målinger ennå</div>
+      </div>
+    </main>
+
+    <main id="practiceView" class="chat-wrap hidden">
       <div id="goalBar" class="goal hidden">
         <div id="goal"></div>
         <button id="summaryBtn" class="small-btn" title="Se rettelsene fra samtalen">📋 Oppsummering</button>
@@ -113,6 +147,7 @@
   </dialog>
 
   <script src="/static/recorder.js"></script>
+  <script src="/static/live.js"></script>
   <script src="/static/app.js"></script>
 </body>
 </html>

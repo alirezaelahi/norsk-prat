@@ -46,6 +46,13 @@ SCENARIOS: list[Scenario] = [
         opener=["Hei! Har du hatt en fin helg?", "Har du noen planer for sommeren?", "Går du på ski om vinteren?", "Har du vært på hytta til noen?", "Det har vært så mye regn i det siste, ikke sant?"],
     ),
     Scenario(
+        "nav", "Hos NAV", "At NAV",
+        role="Lise, saksbehandler på et NAV-kontor",
+        setting="The learner visits NAV about registering as a job seeker (arbeidssøker) or asking about dagpenger. Ask for basic information, explain next steps simply (meldekort, CV on nav.no, aktivitetsplan), and check that they understood.",
+        goal="Explain your situation and understand what to do next.",
+        opener=["Hei, velkommen til NAV. Hva kan jeg hjelpe deg med?", "Har du registrert deg som arbeidssøker på nav.no?", "Når mistet du jobben?", "Du må sende meldekort hver fjortende dag.", "Har du flere spørsmål?"],
+    ),
+    Scenario(
         "butikk", "I butikken", "At the shop",
         role="Ahmed, ansatt i en dagligvarebutikk",
         setting="The learner is shopping at a grocery store and needs help finding items, asks about prices and offers, and pays at the counter. Mention pose, kvittering, Trumf/medlemskort.",

@@ -131,13 +131,22 @@ class TTS:
             return self._engines[key]
 
     def speak(self, text: str, voice_id: str = config.DEFAULT_VOICE, speed: float = 1.0) -> bytes:
+        """WAV bytes, cached."""
         text = " ".join(text.split())
         speed = min(max(speed, 0.5), 1.5)
         key = (voice_id, round(speed, 2), text)
         if key in self._cache:
             self._cache.move_to_end(key)
             return self._cache[key]
+        wav = to_wav_bytes(*self.synthesize(text, voice_id, speed))
+        self._cache[key] = wav
+        if len(self._cache) > self._cache_size:
+            self._cache.popitem(last=False)
+        return wav
 
+    def synthesize(self, text: str, voice_id: str = config.DEFAULT_VOICE, speed: float = 1.0) -> tuple[np.ndarray, int]:
+        """Raw float samples + sample rate (used by the live pipeline)."""
+        speed = min(max(speed, 0.5), 1.5)
         parts = voice_id.split(":")
         if parts[0] == "piper" and len(parts) >= 2 and parts[1] in PIPER_VOICES:
             engine, speaker = self._engine(parts[1]), (parts[2] if len(parts) > 2 else None)
@@ -146,9 +155,4 @@ class TTS:
         else:
             raise ValueError(f"unknown voice: {voice_id}")
 
-        samples, sr = engine.synthesize(text, speed, speaker)
-        wav = to_wav_bytes(samples, sr)
-        self._cache[key] = wav
-        if len(self._cache) > self._cache_size:
-            self._cache.popitem(last=False)
-        return wav
+        return engine.synthesize(text, speed, speaker)

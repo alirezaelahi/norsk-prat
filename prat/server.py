@@ -6,7 +6,7 @@ import logging
 import threading
 from typing import Callable, Generic, TypeVar
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -236,6 +236,36 @@ def create_app(
     def delete_vocab(vid: int):
         store.delete_vocab(vid)
         return {"ok": True}
+
+    # ------------------------------------------------------------ live conversation
+    @app.websocket("/ws/live")
+    async def live(ws: WebSocket):
+        import asyncio
+        import json as _json
+
+        from .live.session import MLX_EXEC, LiveSession
+        from .local_lm import get_local_lm
+
+        await ws.accept()
+        loop = asyncio.get_running_loop()
+        # Load models off the event loop (first connection only).
+        lm = await loop.run_in_executor(MLX_EXEC, get_local_lm)
+        stt_obj = await loop.run_in_executor(MLX_EXEC, stt_lazy.get)
+        session = LiveSession(ws.send_json, ws.send_bytes, stt_obj, lm, tts, store)
+        await ws.send_json({"type": "ready"})
+        try:
+            while True:
+                msg = await ws.receive()
+                if msg["type"] == "websocket.disconnect":
+                    break
+                if msg.get("bytes") is not None:
+                    await session.handle_audio(msg["bytes"])
+                elif msg.get("text"):
+                    await session.handle_message(_json.loads(msg["text"]))
+        except WebSocketDisconnect:
+            pass
+        finally:
+            await session.close()
 
     # ------------------------------------------------------------ web UI
     @app.get("/")
