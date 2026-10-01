@@ -1,0 +1,29 @@
+[project]
+name = "norsk-prat"
+version = "0.1.0"
+description = "Local Norwegian conversation practice with Norwegian TTS/STT models"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.30",
+    "python-multipart>=0.0.9",
+    "pydantic>=2.7",
+    "numpy>=1.26",
+    "scipy>=1.13",
+    "soundfile>=0.12",
+    "piper-tts>=1.2",
+    "onnxruntime>=1.18",
+    "transformers>=4.44",
+    "torch>=2.3",
+    "huggingface-hub>=0.24",
+    "anthropic>=0.40",
+]
+
+[project.optional-dependencies]
+mlx = ["mlx-lm>=0.19"]
+
+[dependency-groups]
+dev = ["pytest>=8", "httpx>=0.27"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
