@@ -85,7 +85,7 @@ async function init() {
   $("#voice").innerHTML = c.voices.map((v) => `<option value="${v.id}" title="${esc(v.note)}">${esc(v.label)}</option>`).join("");
   $("#voice").value = state.prefs.voice || c.default_voice;
   $("#voice").addEventListener("change", () => { state.prefs.voice = $("#voice").value; savePrefs(); speak("Hei! Sånn høres jeg ut."); });
-  $("#speed").value = state.prefs.speed || 1;
+  $("#speed").value = state.prefs.speed || 0.9;
   const showSpeed = () => ($("#speedVal").textContent = (+$("#speed").value).toFixed(2).replace(/0$/, "") + "×");
   showSpeed();
   $("#speed").addEventListener("input", () => { showSpeed(); state.prefs.speed = +$("#speed").value; savePrefs(); });

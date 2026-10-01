@@ -25,7 +25,7 @@ class TurnConfig:
     speech_threshold: float = 0.5
     silence_threshold: float = 0.35
     start_ms: float = 96  # speech needed to open a user turn
-    pause_ms: float = 256  # silence before speculative STT/LLM starts
+    pause_ms: float = 160  # silence before speculative STT/LLM starts (cheap to cancel)
     end_ms: float = 800  # silence that ends a turn (live-adjustable; learners pause a lot)
     barge_ms: float = 256  # speech over the tutor needed to interrupt (ignores coughs)
     barge_threshold: float = 0.6  # stricter while the tutor talks (echo residue)

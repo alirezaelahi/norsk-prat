@@ -106,6 +106,19 @@ class LocalLM:
                     if not self._cached:
                         self._cache = None
 
+    def warmup(self) -> None:
+        """Compile Metal kernels for both the cold and the cached-continuation paths once,
+        so the learner's first turns are as fast as later ones."""
+        if getattr(self, "_warm", False):
+            return
+        sys_ = "Du er en vennlig samtalepartner. Svar kort på norsk."
+        msgs = [{"role": "user", "content": "Hei!"}]
+        reply = "".join(self.generate(sys_, msgs, max_tokens=8))
+        msgs += [{"role": "assistant", "content": reply}, {"role": "user", "content": "Hvordan har du det?"}]
+        for _ in self.generate(sys_, msgs, max_tokens=4):
+            pass
+        self._warm = True
+
     def complete(self, system: str, messages: list[dict], max_tokens: int, temperature: float) -> str:
         """One-shot completion for side tasks (feedback, translation…); leaves the chat cache alone."""
         return "".join(self.generate(system, messages, max_tokens, temperature, use_cache=False))

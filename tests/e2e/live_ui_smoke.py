@@ -2,7 +2,7 @@
 learner utterances (TTS) with pauses, so the full browser audio path is exercised."""
 import asyncio, os, json
 from playwright.async_api import async_playwright
-OUT = "scratch/shots"
+OUT = os.environ.get("PRAT_SHOTS", "scratch/shots")
 SCRIPT = """
 (() => {
   const lines = window.__lines;

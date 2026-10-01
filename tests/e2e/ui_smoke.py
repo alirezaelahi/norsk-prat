@@ -34,6 +34,7 @@ async def main():
         await page.wait_for_function("document.querySelector('#status').textContent.startsWith('Klar')", timeout=120000)
         print("status:", await page.text_content("#status"))
         await page.screenshot(path=f"{OUT}/1-home.png")
+        await page.click(".mode[data-mode=practice]")
         await page.click(".scenario[data-id=kafe]"); await page.click("#levels button[data-level=A2]")
         await page.click("#startBtn")
         await page.wait_for_selector(".msg.partner:not(.typing)", timeout=60000)

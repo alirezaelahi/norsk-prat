@@ -73,7 +73,7 @@ def parse_command(text: str) -> Command | None:
     words = t.split()
     if not words or len(words) > 8:
         return None
-    if re.search(r"\b(saktere|langsommere|roligere)\b|\bsnakke? (litt )?(mer )?(sakte|rolig)\b", t):
+    if re.search(r"\b(saktere|langsommere|roligere)\b|\bsnakke? (litt )?(mer )?(sakt\w*|rolig\w*)", t):
         return Command("slower")
     if re.search(r"\b(fortere|raskere)\b", t):
         return Command("faster")

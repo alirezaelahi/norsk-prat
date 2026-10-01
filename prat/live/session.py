@@ -217,8 +217,10 @@ class Response:
 
 def _speakable(text: str) -> str:
     """Strip things a TTS voice should not read aloud."""
+    import html
     import re
 
+    text = html.unescape(text).replace("&", " og ")
     text = re.sub(r"[*_#`~<>\[\]{}|]", "", text)
     text = re.sub(r"\([^)]*\)", "", text)  # parenthetical stage directions
     return " ".join(text.split()).strip()

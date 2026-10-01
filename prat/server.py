@@ -251,6 +251,8 @@ def create_app(
         # Load models off the event loop (first connection only).
         lm = await loop.run_in_executor(MLX_EXEC, get_local_lm)
         stt_obj = await loop.run_in_executor(MLX_EXEC, stt_lazy.get)
+        await loop.run_in_executor(MLX_EXEC, stt_obj._load)  # compile Whisper kernels before turn 1
+        await loop.run_in_executor(MLX_EXEC, lm.warmup)
         session = LiveSession(ws.send_json, ws.send_bytes, stt_obj, lm, tts, store)
         await ws.send_json({"type": "ready"})
         try:

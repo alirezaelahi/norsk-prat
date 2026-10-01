@@ -1,56 +1,45 @@
 # Prat — norsk samtaletrening
 
-Practise **spoken Norwegian (bokmål)** by role-playing everyday situations with an AI
-partner. Everything runs locally on a Mac: the partner speaks through Norwegian TTS
-voices, listens through the National Library's Norwegian Whisper, and gently corrects you.
+A local, offline **spoken Norwegian conversation partner**: you just talk, it listens, waits
+for you to finish, answers out loud in about a second, and stops when you interrupt it.
+It's built to the Notion spec *Norwegian Voice Tutor*; see [SPEC.md](SPEC.md) for how each
+requirement was met, the measured latencies, and the deviations.
 
-![chat](docs/chat.png)
+![live](docs/live.png)
 
 ## Quick start
 
 ```bash
-./run.sh            # first run downloads ~6 GB of models, then open http://127.0.0.1:8000
+./run.sh            # first run downloads ~5 GB of models, then open http://127.0.0.1:8000
 ```
 
-Requires [uv](https://docs.astral.sh/uv/) and an Apple-silicon Mac (the local LLM uses MLX).
-On other machines, set `PRAT_LLM=claude` (or `scripted`). The other models also run on CPU.
+Then press the orb and talk. **Use headphones** for the best results. Requires
+[uv](https://docs.astral.sh/uv/) and an Apple-silicon Mac (MLX). Chrome is recommended
+(for its echo cancellation).
 
-## What you can do
+## Two modes
 
-- **8 scenarios**: café, GP, job interview, lunch small talk, shop, apartment viewing,
-  *Norskprøven* oral exam, free conversation. **Levels A2 / B1 / B2**.
-- **Talk or type.** Click 🎙 or hold <kbd>space</kbd>. Turn off *Send tale automatisk* to
-  review or edit the transcript before sending.
-- **Corrections** under each of your messages, as a word diff (struck = wrong, green = fix).
-- **Listening practice**: replay, 🐢 slow replay, *EN* translation, and *Vis norsk tekst*
-  off to hide the text until you tap it.
-- **Tap any word** to hear it, see its meaning in context and save it to the **Ordbok**.
-- **💡 Hjelp meg** suggests three things you could say next.
-- **🎙 Øv (shadowing)** — hear a sentence, say it, get a word-by-word score.
-- **📋 Oppsummering** — every correction from the conversation, with practice buttons.
-- 12 voices: Talesyntese, 10 NVCC speakers (male/female, several regional codes), and MMS.
+**🎧 Samtale (live)** — hands-free conversation, as in the spec:
+- Silero VAD and adaptive end-of-turn detection. It waits longer when you trail off ("…og", "eh").
+  **Ventetid før svar** sets the silence window live.
+- NB-Whisper (MLX) → Borealis (streamed, with a prompt cache) → sentence chunker → Piper,
+  with the work started *during* your pause so the reply is ready when the turn ends.
+- **Barge-in:** start talking and it stops within ~0.1–0.2 s, and remembers only what you heard.
+- **Voice commands:** "gjenta", "saktere" / "fortere", "forklar *ord*", "la oss øve på kafé / hos legen / NAV / jobbintervju…".
+- A live transcript (tap a word for its meaning), a **latency panel** per turn, and a summary at the end.
 
-## Models
-
-| Role | Model | Notes |
-|---|---|---|
-| TTS | Piper `no_NO-talesyntese-medium` | default; clearest; ~0.25 s per sentence on CPU |
-| TTS | Piper `no_NO-nvcc-medium` (10 speakers) | K = kvinne, M = mann (checked by pitch); the suffix is a regional code from the dataset |
-| TTS | Meta MMS VITS bokmål (`thomasht86/mms-tts-nob`) | experimental, noticeably less accurate |
-| STT | `NbAiLab/nb-whisper-small` | ~1–2 s per utterance on the M1 GPU |
-| Partner | `NbAiLab/borealis-4b-instruct-preview-mlx-8bit` | local Norwegian LLM, ~1.5–3 s per reply |
-| Partner | Claude (`claude-opus-5-5`) | used automatically when `ANTHROPIC_API_KEY` is set |
-
-The partner works in small, separate tasks (reply → then feedback / translation /
-gloss / suggestions on demand), so the spoken reply arrives first and a 4B model stays reliable.
+**✍️ Øving (practice)** — push-to-talk or typed chat with explicit corrections (word diff), translation,
+tap-a-word glossary, "💡 help me answer" suggestions, shadowing with a pronunciation score, and a word list.
 
 ## Configuration (env vars)
 
 | Var | Default | |
 |---|---|---|
-| `PRAT_LLM` | `auto` | `auto` (Claude if credentials, else Borealis, else scripted) · `claude` · `mlx` · `scripted` |
-| `PRAT_MLX_MODEL` | `NbAiLab/borealis-4b-instruct-preview-mlx-8bit` | try `…-1b-…` for speed, `…-12b-…-8bit` for quality |
-| `PRAT_STT_MODEL` | `NbAiLab/nb-whisper-small` | `nb-whisper-base` is ~3× faster, `-medium` more accurate |
+| `PRAT_LLM` | `mlx` | `mlx` (local Borealis) · `claude` (practice mode only, needs `ANTHROPIC_API_KEY`) · `auto` · `scripted` |
+| `PRAT_MLX_MODEL` | `NbAiLab/borealis-4b-instruct-preview-mlx-8bit` | `NbAiLab/borealis-12b-instruct-preview-mlx-8bit` on a 40 GB Mac; `models/borealis-4b-4bit` for low memory |
+| `PRAT_STT_MODEL` | `FredrikKarlssonSpeech/nb-whisper-small-mlx` | `…-medium-mlx` is more accurate (~0.7 s on an M1 Pro) |
+| `PRAT_END_MS` | `800` | default silence before the tutor answers |
+| `PRAT_SPEED` | `0.9` | default speaking rate |
 | `PRAT_VOICE` | `piper:talesyntese` | default voice id |
 | `PRAT_CLAUDE_MODEL` | `claude-opus-5-5` | |
 | `PRAT_DATA_DIR` / `PRAT_MODELS_DIR` | `./data` / `./models` | SQLite DB / Piper voices |
@@ -62,31 +51,37 @@ only allow the microphone on `localhost` or HTTPS.
 
 ```
 prat/
+  live/         real-time pipeline: vad.py (Silero ONNX), turn.py (end-of-turn/barge-in),
+                chunker.py, tutor.py (prompt, voice commands), session.py (orchestration)
+  local_lm.py   Borealis on MLX: streaming + reusable KV prompt cache
   tts.py        Piper + MMS engines, voice registry, WAV cache
-  stt.py        NB-Whisper (transformers, MPS)
-  llm.py        tutoring prompts + parsing; Claude / Borealis-MLX / scripted backends
+  stt.py        NB-Whisper on MLX
+  llm.py        practice-mode tutoring tasks; Claude / Borealis / scripted backends
   scenarios.py  role-play scenarios and level descriptions
   scoring.py    shadowing word alignment
   store.py      SQLite: sessions, turns, vocab
   server.py     FastAPI API + static UI
-web/            vanilla JS UI; recorder.js captures 16 kHz WAV in the browser (no ffmpeg)
-tests/          pytest (fake engines) + e2e/ui_smoke.py (headless browser, real models)
+web/            vanilla JS UI; live.js streams echo-cancelled mic audio and plays tutor chunks
+tests/          pytest (fake engines, turn logic) + e2e/ (real models: live_client.py measures
+                latency and barge-in; live_ui_smoke.py and ui_smoke.py drive a headless browser)
 ```
 
 ## Tests
 
 ```bash
-uv run pytest                                   # fast unit/API tests, no models
-./run.sh --port 8765 & uv run python tests/e2e/ui_smoke.py   # full UI with real models
+uv run pytest                                          # fast unit tests, no models
+./run.sh --port 8765 &
+uv run python tests/e2e/live_client.py                 # real-time latency + barge-in report
+uv run python tests/e2e/live_ui_smoke.py               # live mode in a headless browser
+uv run python tests/e2e/ui_smoke.py                    # practice mode in a headless browser
 ```
 
 ## Known limitations
 
-- **Whisper smooths over inflection errors.** It tends to transcribe *"koste"* as *"koster"* and
-  *"eple"* as *"epler"*, so spoken mistakes in endings can go unnoticed. Word order survives, and
-  typed text is checked exactly. The `-verbatim` NB-Whisper models behaved the same in testing.
-- **Local explanations are hidden.** Borealis 4B makes good corrections but often explains them
-  wrongly, so with the local model you see only the corrected sentence. Claude adds explanations.
-- The Claude backend is unit-tested against the API request shape but has not been run against the
-  live API from this machine (no key was configured).
-- Pronunciation scoring is word-level (did the recogniser understand you), not phoneme-level.
+- **Echo with speakers is untested.** The browser's echo cancellation is used, but headless tests
+  can't open a real mic. Use headphones until you've tried it on speakers.
+- **Whisper smooths over inflection errors** ("koste" → "koster"), so the tutor can't recast those.
+- **This dev machine has 16 GB.** With many apps open the system swaps and latency rises to 2 s or
+  more; the 40 GB target won't have this problem.
+- Practice-mode explanations are hidden with the local model (its corrections are good, its
+  explanations often aren't).

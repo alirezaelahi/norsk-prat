@@ -108,6 +108,7 @@ def test_chunker_drops_punctuation_only_chunks():
         ("Kan du snakke saktere?", "slower", ""),
         ("Litt fortere, takk.", "faster", ""),
         ("Kan du snakke sakte?", "slower", ""),  # Whisper often drops the "-re"
+        ("Kan du snakke saktige?", "slower", ""),  # ...or mishears it
         ("Unnskyld, kan du gjenta?", "repeat", ""),
         ("Hva sa du?", "repeat", ""),
         ("Forklar ordet dagpenger.", "explain", "dagpenger"),
