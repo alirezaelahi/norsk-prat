@@ -176,3 +176,7 @@ def test_feedback_that_answers_instead_of_correcting_is_dropped():
 
 def test_feedback_echo_with_comment_is_ok():
     assert parse_feedback("Jeg bor i Oslo.", "Jeg bor i Oslo. The word order is correct.") is None
+
+
+def test_empty_reply_falls_back_to_a_polite_repeat_request():
+    assert Partner(EchoBackend("")).reply("kafe", "A2", []) == "Beklager, kan du si det en gang til?"

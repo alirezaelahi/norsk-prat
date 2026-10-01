@@ -10,7 +10,6 @@ import json
 import threading
 from collections import OrderedDict
 from dataclasses import dataclass
-from pathlib import Path
 
 import numpy as np
 
@@ -67,8 +66,10 @@ class PiperEngine:
 
             base = PIPER_VOICES[self.name]
             local = config.MODELS_DIR / "piper"
-            onnx = Path(hf_hub_download(PIPER_REPO, f"{base}.onnx", local_dir=local))
-            hf_hub_download(PIPER_REPO, f"{base}.onnx.json", local_dir=local)
+            onnx = local / f"{base}.onnx"
+            if not (onnx.exists() and onnx.with_suffix(".onnx.json").exists()):  # download once; then offline
+                hf_hub_download(PIPER_REPO, f"{base}.onnx", local_dir=local)
+                hf_hub_download(PIPER_REPO, f"{base}.onnx.json", local_dir=local)
             self._voice = PiperVoice.load(onnx)
         return self._voice
 

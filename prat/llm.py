@@ -162,7 +162,7 @@ class Partner:
     def reply(self, scenario_id: str, level: str, history: list[Turn]) -> str:
         s = BY_ID[scenario_id]
         raw = self.backend.complete(_reply_system(s, level), self._history(history), 150, 0.7)
-        return clean_reply(raw)
+        return clean_reply(raw) or "Beklager, kan du si det en gang til?"
 
     def feedback(self, text: str) -> dict | None:
         # No conversation context on purpose: with it, small models tend to answer the
