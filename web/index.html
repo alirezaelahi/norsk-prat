@@ -49,7 +49,10 @@
     </aside>
 
     <main class="chat-wrap">
-      <div id="goal" class="goal hidden"></div>
+      <div id="goalBar" class="goal hidden">
+        <div id="goal"></div>
+        <button id="summaryBtn" class="small-btn" title="Se rettelsene fra samtalen">📋 Oppsummering</button>
+      </div>
       <div id="chat" class="chat">
         <div class="empty">
           <h1>Hei! 👋</h1>
@@ -96,6 +99,15 @@
         <button type="button" id="shadowRec" class="mic big"><span class="mic-icon">🎙</span> Ta opp</button>
       </div>
       <div id="shadowResult" class="shadow-result"></div>
+      <div class="row end"><button value="close">Lukk</button></div>
+    </form>
+  </dialog>
+
+  <!-- session summary -->
+  <dialog id="summary">
+    <form method="dialog" class="shadow-inner">
+      <h2>Oppsummering</h2>
+      <div id="summaryBody" class="summary-body"></div>
       <div class="row end"><button value="close">Lukk</button></div>
     </form>
   </dialog>

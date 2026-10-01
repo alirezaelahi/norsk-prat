@@ -154,3 +154,25 @@ def test_suggest_prompt_names_partner_and_level():
     assert out == ["Ta med, takk.", "Spise her.", "Kan jeg betale med kort?"]
     prompt = be.calls[0]["messages"][0]["content"]
     assert "Kari: Spise her eller ta med?" in prompt and "nivå B1" in prompt
+
+
+def test_feedback_explanation_on_same_line_is_split():
+    fb = parse_feedback(
+        "I går jeg gikk til butikken.",
+        "I går gikk jeg til butikken. The verb should come before the subject.",
+    )
+    assert fb == {"corrected": "I går gikk jeg til butikken.", "explanation": "The verb should come before the subject."}
+
+
+def test_feedback_multi_sentence_original():
+    fb = parse_feedback("Hei. Hvor mye koste det?", "«Hei. Hvor mye koster det?» \nUse the present tense 'koster'.")
+    assert fb == {"corrected": "Hei. Hvor mye koster det?", "explanation": "Use the present tense 'koster'."}
+
+
+def test_feedback_that_answers_instead_of_correcting_is_dropped():
+    raw = "Hei, nei. Strøm er ikke inkludert i husleien, men internett er det, og depositum er tre måneder."
+    assert parse_feedback("Hei, ja. Er strøm inkludert i husleien?", raw) is None
+
+
+def test_feedback_echo_with_comment_is_ok():
+    assert parse_feedback("Jeg bor i Oslo.", "Jeg bor i Oslo. The word order is correct.") is None

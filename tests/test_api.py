@@ -132,3 +132,11 @@ def test_gloss_and_vocab(client):
     assert len(items) == 1 and items[0]["meaning"] == "costs" and items[0]["example"] == "Hvor mye koster det?"
     client.delete(f"/api/vocab/{v['id']}")
     assert client.get("/api/vocab").json() == []
+
+
+def test_summary_collects_corrections(client):
+    sid = client.post("/api/sessions", json={"scenario": "kafe", "level": "A2"}).json()["session"]["id"]
+    client.post(f"/api/sessions/{sid}/turn", json={"text": "Hvor mye koste det?"})
+    r = client.post(f"/api/sessions/{sid}/summary").json()
+    assert r["turns"] == 1 and r["words"] == 4 and r["correct"] == 0
+    assert r["corrections"][0]["feedback"]["corrected"] == "Hvor mye koster det?"

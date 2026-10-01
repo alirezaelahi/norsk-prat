@@ -168,6 +168,25 @@ def create_app(
         partner_turn = store.add_turn(sid, "partner", reply)
         return {"user_turn": user_turn, "partner_turn": partner_turn}
 
+    @app.post("/api/sessions/{sid}/summary")
+    def summary(sid: str):
+        """All learner turns with their feedback (computing any that are missing)."""
+        s = _session(sid)
+        items = []
+        for t in s["turns"]:
+            if t["role"] != "user":
+                continue
+            if "feedback" not in t["extra"]:
+                t["extra"]["feedback"] = partner_lazy.get().feedback(t["text"])
+                store.update_turn_extra(t["id"], feedback=t["extra"]["feedback"])
+            items.append({"id": t["id"], "text": t["text"], "feedback": t["extra"]["feedback"]})
+        return {
+            "turns": len(items),
+            "correct": sum(1 for i in items if not i["feedback"]),
+            "words": sum(len(i["text"].split()) for i in items),
+            "corrections": [i for i in items if i["feedback"]],
+        }
+
     @app.post("/api/sessions/{sid}/suggestions")
     def suggestions(sid: str):
         s = _session(sid)
@@ -186,8 +205,7 @@ def create_app(
         if t["role"] != "user":
             raise HTTPException(400, "feedback is only for learner turns")
         if "feedback" not in t["extra"]:
-            prev = [x for x in store.turns(t["session_id"]) if x["id"] < tid and x["role"] == "partner"]
-            fb = partner_lazy.get().feedback(t["text"], prev[-1]["text"] if prev else "")
+            fb = partner_lazy.get().feedback(t["text"])
             store.update_turn_extra(tid, feedback=fb)
             return {"feedback": fb}
         return {"feedback": t["extra"]["feedback"]}

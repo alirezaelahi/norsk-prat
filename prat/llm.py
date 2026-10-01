@@ -50,9 +50,9 @@ def _reply_system(s: Scenario, level: str) -> str:
 
 
 FEEDBACK_SYSTEM = (
-    "You are a Norwegian (bokmål) teacher. The student said a sentence in a conversation. "
-    "If it has grammar, word-order, spelling or word-choice errors, answer on line 1 with the corrected "
-    "sentence in Norwegian, and on line 2 with a one-sentence explanation in English. "
+    "You are a Norwegian (bokmål) teacher checking a student's sentence. Do NOT answer or reply to the sentence — "
+    "only check its language. If it has grammar, word-order, spelling or word-choice errors, answer on line 1 with the "
+    "same sentence corrected (change as little as possible), and on line 2 with a one-sentence explanation in English. "
     "Ignore capitalisation and punctuation. If the sentence is correct and natural, answer only: OK"
 )
 
@@ -91,17 +91,31 @@ def clean_reply(text: str) -> str:
     return " ".join(text.split())
 
 
+_SENT_SPLIT = re.compile(r"(?<=[.!?])\s+")
+
+
 def parse_feedback(original: str, raw: str) -> dict | None:
-    """Return ``{"corrected", "explanation"}`` or ``None`` if the sentence was fine."""
-    lines = [ln.strip().strip('"«»') for ln in raw.strip().splitlines() if ln.strip()]
+    """Return ``{"corrected", "explanation"}`` or ``None`` if the sentence was fine.
+
+    Guards against small-model failure modes: echoing the sentence back, appending the
+    English explanation on the same line, or replying to the sentence instead of fixing it.
+    """
+    lines = [ln.strip() for ln in raw.strip().splitlines() if ln.strip()]
     lines = [ln for ln in lines if ln.upper().rstrip(".!") != "OK"]
     if not lines:
         return None
-    corrected = re.sub(r"^(corrected|korrigert|rettet)\s*:\s*", "", lines[0], flags=re.I)
-    if _norm(corrected) == _norm(original) or not _norm(corrected):
-        return None
-    explanation = " ".join(lines[1:2])
+    first = re.sub(r"^(corrected|korrigert|rettet)\s*:\s*", "", lines[0], flags=re.I)
+    # The correction has as many sentences as the original; anything after is explanation.
+    n = max(1, len(_SENT_SPLIT.split(original.strip())))
+    parts = _SENT_SPLIT.split(first)
+    corrected = " ".join(parts[:n]).strip().strip('"«»').strip()
+    explanation = " ".join(parts[n:] + lines[1:2]).strip()
     explanation = re.sub(r"^(explanation|forklaring)\s*:\s*", "", explanation, flags=re.I)
+    a, b = _norm(original), _norm(corrected)
+    if not b or a == b:
+        return None
+    if SequenceMatcher(None, a.split(), b.split()).ratio() < 0.5:
+        return None  # not a correction of this sentence
     return {"corrected": corrected, "explanation": explanation}
 
 
@@ -150,9 +164,10 @@ class Partner:
         raw = self.backend.complete(_reply_system(s, level), self._history(history), 150, 0.7)
         return clean_reply(raw)
 
-    def feedback(self, text: str, context: str = "") -> dict | None:
-        prompt = f"(The other person had said: «{context}»)\nStudent: {text}" if context else text
-        raw = self.backend.complete(FEEDBACK_SYSTEM, [{"role": "user", "content": prompt}], 200, 0.0)
+    def feedback(self, text: str) -> dict | None:
+        # No conversation context on purpose: with it, small models tend to answer the
+        # sentence instead of correcting it.
+        raw = self.backend.complete(FEEDBACK_SYSTEM, [{"role": "user", "content": f"Student sentence: «{text}»"}], 200, 0.0)
         fb = parse_feedback(text, raw)
         if fb and not self.backend.explains:
             fb["explanation"] = ""
@@ -186,7 +201,7 @@ class ScriptedPartner(Partner):
         n = sum(1 for t in history if t.role == "partner")
         return lines[n % len(lines)]
 
-    def feedback(self, text: str, context: str = "") -> dict | None:
+    def feedback(self, text: str) -> dict | None:
         return None
 
     def translate(self, text: str) -> str:

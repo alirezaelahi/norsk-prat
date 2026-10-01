@@ -100,6 +100,7 @@ async function init() {
   $("#startBtn").addEventListener("click", startSession);
   $("#composer").addEventListener("submit", (e) => { e.preventDefault(); sendText($("#input").value); });
   $("#helpBtn").addEventListener("click", showSuggestions);
+  $("#summaryBtn").addEventListener("click", showSummary);
   $("#menuBtn").addEventListener("click", () => $("#sidebar").classList.toggle("open"));
   $$(".tab").forEach((t) => t.addEventListener("click", () => switchTab(t.dataset.tab)));
   setupMic();
@@ -180,7 +181,7 @@ async function openSession(id) {
 function showGoal() {
   const sc = state.config.scenarios.find((s) => s.id === state.session.scenario);
   $("#goal").innerHTML = `<b>${esc(sc.title)}</b> · ${state.session.level} — <span class="muted">${esc(sc.goal)}</span>`;
-  $("#goal").classList.remove("hidden");
+  $("#goalBar").classList.remove("hidden");
 }
 
 async function sendText(text) {
@@ -342,6 +343,34 @@ function diffWords(a, b) {
   while (i < A.length) out.push(`<del>${esc(A[i++])}</del>`);
   while (j < B.length) out.push(`<ins>${esc(B[j++])}</ins>`);
   return out.join(" ");
+}
+
+// ------------------------------------------------------------------ summary
+async function showSummary() {
+  if (!state.session) return;
+  const body = $("#summaryBody");
+  body.innerHTML = '<p class="muted">Går gjennom samtalen…</p>';
+  $("#summary").showModal();
+  try {
+    const r = await api(`/api/sessions/${state.session.id}/summary`, { method: "POST" });
+    if (!r.turns) { body.innerHTML = '<p class="muted">Du har ikke sagt noe ennå. Sett i gang! 🙂</p>'; return; }
+    const stats = `<div class="stats">
+        <div><b>${r.turns}</b><span>replikker</span></div>
+        <div><b>${r.words}</b><span>ord</span></div>
+        <div><b>${Math.round((100 * r.correct) / r.turns)}%</b><span>uten feil</span></div>
+      </div>`;
+    const list = r.corrections.length
+      ? `<h3>Rettelser</h3><ul class="corrections">${r.corrections.map((c, i) => `
+          <li>
+            <div class="diff">${diffWords(c.text, c.feedback.corrected)}</div>
+            ${c.feedback.explanation ? `<div class="why">${esc(c.feedback.explanation)}</div>` : ""}
+            <div class="fix-tools"><button type="button" data-i="${i}" data-act="play">▶</button><button type="button" data-i="${i}" data-act="shadow">🎙 Øv</button></div>
+          </li>`).join("")}</ul>`
+      : '<p class="ok">Ingen rettelser — kjempebra! 🎉</p>';
+    body.innerHTML = stats + list;
+    $$("[data-act=play]", body).forEach((b) => b.addEventListener("click", () => speak(r.corrections[b.dataset.i].feedback.corrected)));
+    $$("[data-act=shadow]", body).forEach((b) => b.addEventListener("click", () => { $("#summary").close(); openShadow(r.corrections[b.dataset.i].feedback.corrected); }));
+  } catch (e) { body.innerHTML = `<p class="muted">Feil: ${esc(e.message)}</p>`; }
 }
 
 // ------------------------------------------------------------------ suggestions

@@ -79,6 +79,12 @@ async def main():
         print("shadow:", (await page.inner_text("#shadowResult")).replace("\n"," | "))
         await page.screenshot(path=f"{OUT}/5-shadow.png")
         await page.keyboard.press("Escape")
+        # summary
+        await page.click("#summaryBtn")
+        await page.wait_for_selector("#summaryBody .stats", timeout=60000)
+        print("summary:", (await page.inner_text("#summaryBody")).replace("\n", " | ")[:300])
+        await page.screenshot(path=f"{OUT}/5b-summary.png")
+        await page.keyboard.press("Escape")
         # hide-text mode + dark + mobile
         await page.click("#showText"); await page.screenshot(path=f"{OUT}/6-hidden-text.png")
         await page.click("#showText")
