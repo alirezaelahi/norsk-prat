@@ -41,7 +41,7 @@ class FakeBackend:
             return "How much does it cost?"
         if "dictionary" in system:
             return "cost (koste)"
-        if "Skriv 3 korte" in system:
+        if "Skriv tre forskjellige" in messages[0]["content"]:
             return "1. Ja, takk.\n2. Nei, takk.\n3. Hva koster det?"
         return f"Svar nummer {len(messages)}."
 

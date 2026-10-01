@@ -129,3 +129,28 @@ def test_claude_backend_refusal_returns_empty():
 
     client = anthropic.Anthropic(api_key="test", http_client=httpx2.Client(transport=httpx2.MockTransport(handler)))
     assert ClaudeBackend(client=client).complete("sys", [{"role": "user", "content": "x"}], 10, 0) == ""
+
+
+@pytest.mark.parametrize(
+    "word, raw, expected",
+    [
+        ("kanelbolle", "cinnamon bun (kannelbolle)", "cinnamon bun"),  # misspelt lemma dropped
+        ("koster", "costs (koste)", "costs (koste)"),  # real lemma kept
+        ("gikk", "went (gå)", "went (gå)"),  # irregular lemma kept
+        ("hytta", "the cabin (hytte)\nextra line", "the cabin (hytte)"),
+        ("hei", "hello (hei)", "hello"),
+        ("hei", "", ""),
+    ],
+)
+def test_clean_gloss(word, raw, expected):
+    from prat.llm import clean_gloss
+
+    assert clean_gloss(word, raw) == expected
+
+
+def test_suggest_prompt_names_partner_and_level():
+    be = EchoBackend("1. Ta med, takk.\n2. Spise her.\n3. Kan jeg betale med kort?")
+    out = Partner(be).suggest("kafe", "B1", [Turn("partner", "Spise her eller ta med?")])
+    assert out == ["Ta med, takk.", "Spise her.", "Kan jeg betale med kort?"]
+    prompt = be.calls[0]["messages"][0]["content"]
+    assert "Kari: Spise her eller ta med?" in prompt and "nivå B1" in prompt

@@ -11,6 +11,7 @@ import logging
 import re
 import threading
 from dataclasses import dataclass
+from difflib import SequenceMatcher
 from typing import Protocol
 
 from . import config
@@ -59,16 +60,19 @@ TRANSLATE_SYSTEM = "Translate the Norwegian text to natural English. Answer with
 
 GLOSS_SYSTEM = (
     "You are a Norwegian–English dictionary. Give the English meaning of the Norwegian word as it is used "
-    "in the sentence. Answer with only a short gloss (1–4 words), plus the dictionary form in brackets if "
+    "in the sentence. Gloss only that one word, not the sentence. Answer with only a short gloss (1–4 words), plus the dictionary form in brackets if "
     "different, e.g. 'cost (koste)'."
 )
 
 
-def _suggest_system(level: str) -> str:
+SUGGEST_SYSTEM = "Du er norsklærer og hjelper en elev i en rollespill-samtale."
+
+
+def _suggest_prompt(level: str, convo: str, partner_name: str) -> str:
     return (
-        f"Du hjelper en som lærer norsk ({LEVELS[level].split(':')[0]}). "
-        "Skriv 3 korte, naturlige svar som eleven kan si som neste replikk i samtalen. "
-        "Én per linje, uten nummerering eller anførselstegn."
+        f"Samtalen så langt:\n{convo}\n\n"
+        f"Skriv tre forskjellige korte svar (nivå {level}) som ELEVEN kan si nå, som svar på den siste "
+        f"replikken fra {partner_name}. Bruk akkurat dette formatet:\n1. ...\n2. ...\n3. ..."
     )
 
 
@@ -101,11 +105,24 @@ def parse_feedback(original: str, raw: str) -> dict | None:
     return {"corrected": corrected, "explanation": explanation}
 
 
+def clean_gloss(word: str, raw: str) -> str:
+    """First line only; drop a bracketed 'dictionary form' that is just a misspelling of the word."""
+    line = raw.strip().splitlines()[0].strip(" .\"'") if raw.strip() else ""
+    m = re.match(r"^(.*?)\s*\(([^)]*)\)$", line)
+    if m:
+        gloss, lemma = m.group(1).strip(), m.group(2).strip().lower()
+        w = word.lower()
+        related = w.startswith(lemma[:-1] or lemma) or lemma.startswith(w)
+        if lemma == w or (not related and SequenceMatcher(None, lemma, w).ratio() >= 0.75):
+            return gloss
+    return line
+
+
 def parse_lines(raw: str, limit: int = 3) -> list[str]:
     out = []
     for ln in raw.splitlines():
         ln = re.sub(r"^\s*(?:[-*•]|\d+[.)])\s*", "", ln).strip().strip('"«»').strip()
-        if ln and len(ln) < 160:
+        if ln and len(ln) < 300:
             out.append(ln)
     return out[:limit]
 
@@ -147,12 +164,14 @@ class Partner:
     def gloss(self, word: str, sentence: str) -> str:
         msg = f"Word: {word}\nSentence: {sentence}"
         raw = self.backend.complete(GLOSS_SYSTEM, [{"role": "user", "content": msg}], 30, 0.0)
-        return raw.strip().splitlines()[0].strip(" .\"'") if raw.strip() else ""
+        return clean_gloss(word, raw)
 
     def suggest(self, scenario_id: str, level: str, history: list[Turn]) -> list[str]:
         s = BY_ID[scenario_id]
-        convo = "\n".join(f"{'Eleven' if t.role == 'user' else s.role.split(',')[0]}: {t.text}" for t in history[-6:])
-        raw = self.backend.complete(_suggest_system(level), [{"role": "user", "content": convo}], 150, 0.6)
+        name = s.role.split(",")[0]
+        convo = "\n".join(f"{'Eleven' if t.role == 'user' else name}: {t.text}" for t in history[-6:])
+        prompt = _suggest_prompt(level, convo, name)
+        raw = self.backend.complete(SUGGEST_SYSTEM, [{"role": "user", "content": prompt}], 250, 0.6)
         return parse_lines(raw)
 
 
