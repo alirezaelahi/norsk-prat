@@ -26,6 +26,26 @@ def get_local_lm(name: str = config.MLX_MODEL) -> LocalLM:
         return _instances[name]
 
 
+def normalize_messages(messages: list[dict]) -> list[dict]:
+    """Make a history the chat template accepts: starts with the user, roles alternate.
+
+    Interruptions can leave two learner turns in a row (e.g. the learner talks before the
+    tutor's reply was heard at all); merge such runs instead of crashing.
+    """
+    out: list[dict] = []
+    for m in messages:
+        content = (m.get("content") or "").strip()
+        if not content:
+            continue
+        if out and out[-1]["role"] == m["role"]:
+            out[-1] = {"role": m["role"], "content": f"{out[-1]['content']}\n{content}"}
+        else:
+            out.append({"role": m["role"], "content": content})
+    if out and out[0]["role"] != "user":
+        out.insert(0, {"role": "user", "content": "(Samtalen begynner.)"})
+    return out
+
+
 def _common_prefix(a: list[int], b: list[int]) -> int:
     n = min(len(a), len(b))
     i = 0
@@ -47,7 +67,7 @@ class LocalLM:
 
     def _tokens(self, system: str, messages: list[dict]) -> list[int]:
         return self.tokenizer.apply_chat_template(
-            [{"role": "system", "content": system}, *messages], add_generation_prompt=True, tokenize=True
+            [{"role": "system", "content": system}, *normalize_messages(messages)], add_generation_prompt=True, tokenize=True
         )
 
     def _prepare_cache(self, tokens: list[int]) -> int:

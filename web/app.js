@@ -582,7 +582,7 @@ async function refreshVocab() {
 // ------------------------------------------------------------------ live conversation
 const ORB_LABEL = {
   idle: "Trykk for å starte",
-  connecting: "Kobler til…",
+  connecting: "Laster modellene…",
   listening: "Jeg lytter…",
   user: "Du snakker",
   thinking: "Tenker…",

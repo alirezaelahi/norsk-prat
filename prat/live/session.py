@@ -27,6 +27,7 @@ import numpy as np
 
 from .. import config
 from ..scenarios import BY_ID, LEVELS
+from ..local_lm import normalize_messages
 from .chunker import SentenceChunker
 from .tutor import (
     Command,
@@ -121,8 +122,10 @@ class Response:
         except asyncio.CancelledError:
             self.cancel.set()
             raise
-        except Exception:
+        except Exception as e:
             log.exception("response failed")
+            self.cancel.set()
+            await self.s.send_json({"type": "error", "message": f"Svaret feilet: {e}"})
         finally:
             await tts_queue.put(None)
             try:
@@ -558,7 +561,7 @@ class LiveSession:
             self.system = system_prompt(self.scenario, self.level)
             asyncio.create_task(self.send_json({"type": "scenario", "scenario": self.scenario}))
             return [{"role": "user", "content": scenario_intro_instruction(cmd.arg)}], None
-        msgs = self.messages + [{"role": "user", "content": content}]
+        msgs = normalize_messages(self.messages + [{"role": "user", "content": content}])
         if len(msgs) > MAX_HISTORY:  # trim in blocks so the prompt cache stays valid most turns
             msgs = msgs[-(MAX_HISTORY // 2):]
             if msgs[0]["role"] != "user":

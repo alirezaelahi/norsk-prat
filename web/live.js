@@ -110,6 +110,7 @@
         case "settings": this.ui.settings?.(m); break;
         case "scenario": this.ui.scenario?.(m.scenario); break;
         case "session": this.ui.session?.(m); break;
+        case "error": this.ui.error?.(m.message); break;
       }
     }
 
