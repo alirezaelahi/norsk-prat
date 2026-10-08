@@ -82,7 +82,9 @@ def parse_command(text: str) -> Command | None:
     m = re.search(r"\b(?:forklar|hva betyr)\s+(?:ordet\s+)?(.+)$", t)
     if m and len(m.group(1).split()) <= 3:
         return Command("explain", m.group(1))
-    if re.search(r"\b(la oss|kan vi|vil|skal vi)\b.*\b(øve|spille|snakke|ta|prøve|bytte)\b", t) or t.startswith("rollespill"):
+    if re.search(r"\b(la oss|kan vi|vil|skal vi)\b.*\b(øve|spille|snakke|ta|prøve|bytte)\b", t) or t.startswith(
+        "rollespill"
+    ):
         for sid, pat in _SCENARIO_WORDS.items():
             if re.search(rf"\b({pat})\b", t):
                 return Command("scenario", sid)
@@ -91,7 +93,40 @@ def parse_command(text: str) -> Command | None:
 
 # --------------------------------------------------------------------------- turn-taking heuristics
 
-_TRAILING = {"og", "men", "eller", "så", "fordi", "at", "som", "hvis", "når", "der", "om", "eh", "ehm", "øh", "øhm", "hm", "er", "æh", "altså", "liksom", "jeg", "vi", "en", "et", "ei", "den", "det", "til", "i", "på", "med", "for"}
+_TRAILING = {
+    "og",
+    "men",
+    "eller",
+    "så",
+    "fordi",
+    "at",
+    "som",
+    "hvis",
+    "når",
+    "der",
+    "om",
+    "eh",
+    "ehm",
+    "øh",
+    "øhm",
+    "hm",
+    "er",
+    "æh",
+    "altså",
+    "liksom",
+    "jeg",
+    "vi",
+    "en",
+    "et",
+    "ei",
+    "den",
+    "det",
+    "til",
+    "i",
+    "på",
+    "med",
+    "for",
+}
 
 
 def looks_unfinished(transcript: str) -> bool:
@@ -108,9 +143,13 @@ def looks_unfinished(transcript: str) -> bool:
 
 
 def explain_instruction(word: str) -> str:
-    return f"(Eleven vil at du forklarer «{word}». Forklar det enkelt på norsk med ett eksempel, og fortsett så samtalen.)"
+    return (
+        f"(Eleven vil at du forklarer «{word}». Forklar det enkelt på norsk med ett eksempel, og fortsett så samtalen.)"
+    )
 
 
 def scenario_intro_instruction(scenario: str) -> str:
     s = BY_ID[scenario]
-    return f"(Eleven vil bytte til rollespillet «{s.title}». Gå inn i rollen nå og start situasjonen med én kort replikk.)"
+    return (
+        f"(Eleven vil bytte til rollespillet «{s.title}». Gå inn i rollen nå og start situasjonen med én kort replikk.)"
+    )

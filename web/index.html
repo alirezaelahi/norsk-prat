@@ -64,9 +64,9 @@
       </div>
       <div id="hint" class="hint">🎧 Bruk hodetelefoner for best resultat — da hører jeg ikke meg selv. <button class="icon-btn" id="hintClose" aria-label="Lukk">✕</button></div>
       <div class="stage">
-        <button id="orb" class="orb idle" aria-label="Start samtale">
+        <button id="orb" class="orb connecting" aria-label="Start samtale" disabled>
           <span class="ring" id="orbRing"></span>
-          <span class="orb-label" id="orbLabel">Trykk for å starte</span>
+          <span class="orb-label" id="orbLabel">Laster modellene…</span>
         </button>
         <div id="liveCaption" class="live-caption muted"></div>
       </div>
@@ -147,7 +147,9 @@
   </dialog>
 
   <script src="/static/recorder.js"></script>
-  <script src="/static/live.js"></script>
+  <script src="/static/live-audio.js"></script>
   <script src="/static/app.js"></script>
+  <script src="/static/practice.js"></script>
+  <script src="/static/live-ui.js"></script>
 </body>
 </html>

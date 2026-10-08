@@ -117,6 +117,9 @@ def test_learner_talks_before_opening_is_heard_then_conversation_continues():
     sent, s = asyncio.run(run())
     assert not [m for m in sent if m["type"] == "error"]
     assert [m["text"] for m in sent if m["type"] == "user"] == ["Hallo?", "Jeg heter Ali."]
+    # Audio chunks carry the committed turn number (the UI groups lines by it).
+    user_turns = {m["turn"] for m in sent if m["type"] == "user"}
+    assert {m["turn"] for m in sent if m["type"] == "chunk"} <= user_turns | {1}
 
 
 def test_normal_turn_gets_spoken_reply_and_history_alternates():

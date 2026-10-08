@@ -19,16 +19,17 @@ import logging
 import threading
 import time
 from collections import deque
+from collections.abc import Awaitable, Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
-from typing import Awaitable, Callable
 
 import numpy as np
 
 from .. import config
-from ..scenarios import BY_ID, LEVELS
 from ..local_lm import normalize_messages
+from ..scenarios import BY_ID, LEVELS
 from .chunker import SentenceChunker
+from .turn import TurnConfig, TurnDetector
 from .tutor import (
     Command,
     explain_instruction,
@@ -37,8 +38,7 @@ from .tutor import (
     scenario_intro_instruction,
     system_prompt,
 )
-from .turn import TurnConfig, TurnDetector
-from .vad import FRAME, FRAME_MS, SR
+from .vad import FRAME, FRAME_MS
 
 log = logging.getLogger("prat.live")
 
@@ -90,7 +90,9 @@ class Response:
     Audio is held back until :meth:`commit`; afterwards chunks go straight to the client.
     """
 
-    def __init__(self, session: LiveSession, metrics: Metrics, messages: list[dict] | None, fixed_text: str | None = None):
+    def __init__(
+        self, session: LiveSession, metrics: Metrics, messages: list[dict] | None, fixed_text: str | None = None
+    ):
         self.s = session
         self.metrics = metrics
         self.messages = messages
@@ -141,7 +143,9 @@ class Response:
 
         def produce() -> None:
             try:
-                for piece in lm.generate(self.s.system, self.messages, max_tokens=140, temperature=0.7, cancel=self.cancel):
+                for piece in lm.generate(
+                    self.s.system, self.messages, max_tokens=140, temperature=0.7, cancel=self.cancel
+                ):
                     loop.call_soon_threadsafe(pieces.put_nowait, piece)
             finally:
                 loop.call_soon_threadsafe(pieces.put_nowait, None)
@@ -183,13 +187,15 @@ class Response:
             self.metrics.mark("tts_first_done")
             cid = self.s.next_chunk_id()
             self.chunks[cid] = text
-            msg = {"type": "chunk", "id": cid, "turn": self.metrics.turn, "text": text, "sr": sr}
+            msg = {"type": "chunk", "id": cid, "text": text, "sr": sr}
             if self.committed:
                 await self._send(msg, pcm)
             else:
                 self.held.append((msg, pcm))
 
     async def _send(self, msg: dict, pcm: bytes) -> None:
+        # Turn number is only final once the turn is committed (speculative replies start at 0).
+        msg["turn"] = self.metrics.turn
         self.metrics.mark("first_audio_sent")
         self.sent_ids.append(msg["id"])
         await self.s.send_json(msg)
@@ -343,8 +349,16 @@ class LiveSession:
         self.system = system_prompt(self.scenario, self.level)
         if self.store is not None:
             self.session_id = self.store.create_session(self.scenario, self.level)["id"]
-        await self.send_json({"type": "session", "id": self.session_id, "scenario": self.scenario, "level": self.level,
-                              "speed": self.speed, "end_ms": self.detector.cfg.end_ms})
+        await self.send_json(
+            {
+                "type": "session",
+                "id": self.session_id,
+                "scenario": self.scenario,
+                "level": self.level,
+                "speed": self.speed,
+                "end_ms": self.detector.cfg.end_ms,
+            }
+        )
         await self.state("thinking")
         # The tutor opens the conversation.
         m = Metrics(self._next_turn())
@@ -424,7 +438,11 @@ class LiveSession:
     async def _maybe_partial(self) -> None:
         if self._partial_task and not self._partial_task.done():
             return
-        if now() - self._last_partial < PARTIAL_EVERY_S or self.spec or (self.response and not self.response.done.is_set()):
+        if (
+            now() - self._last_partial < PARTIAL_EVERY_S
+            or self.spec
+            or (self.response and not self.response.done.is_set())
+        ):
             return
         self._last_partial = now()
         audio = np.concatenate(self._turn_audio)
@@ -563,7 +581,7 @@ class LiveSession:
             return [{"role": "user", "content": scenario_intro_instruction(cmd.arg)}], None
         msgs = normalize_messages(self.messages + [{"role": "user", "content": content}])
         if len(msgs) > MAX_HISTORY:  # trim in blocks so the prompt cache stays valid most turns
-            msgs = msgs[-(MAX_HISTORY // 2):]
+            msgs = msgs[-(MAX_HISTORY // 2) :]
             if msgs[0]["role"] != "user":
                 msgs = msgs[1:]
         return msgs, None
@@ -625,7 +643,7 @@ class LiveSession:
             return
         try:
             await asyncio.wait_for(intr["event"].wait(), 1.0)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             pass
         r: Response = intr["response"]
         heard = _heard_text(r, intr.get("report") or {})

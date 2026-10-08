@@ -13,10 +13,7 @@ WEB_DIR = ROOT / "web"
 # Speech recognition: NB-Whisper from the National Library of Norway.
 STT_MODEL = os.environ.get("PRAT_STT_MODEL", "FredrikKarlssonSpeech/nb-whisper-small-mlx")
 
-# Conversation partner backend. Default is fully local (spec: no API keys).
-# "auto" picks Claude if credentials exist, else Borealis, else the scripted partner.
-LLM_BACKEND = os.environ.get("PRAT_LLM", "mlx")  # mlx (local, default) | claude | auto | scripted
-CLAUDE_MODEL = os.environ.get("PRAT_CLAUDE_MODEL", "claude-opus-5-5")
+# Conversation partner: Borealis (National Library of Norway) on MLX, fully local.
 MLX_MODEL = os.environ.get("PRAT_MLX_MODEL", "NbAiLab/borealis-4b-instruct-preview-mlx-8bit")
 
 DEFAULT_VOICE = os.environ.get("PRAT_VOICE", "piper:talesyntese")

@@ -1,34 +1,59 @@
 [project]
 name = "norsk-prat"
-version = "0.1.0"
-description = "Local Norwegian conversation practice with Norwegian TTS/STT models"
+version = "0.2.0"
+description = "A local, hands-free Norwegian conversation partner: NB-Whisper + Borealis + Piper on Apple silicon"
+readme = "README.md"
+license = "GPL-3.0-or-later"
+authors = [{ name = "Alireza Elahi" }]
 requires-python = ">=3.12,<3.13"
+keywords = ["norwegian", "language-learning", "speech", "tts", "whisper", "mlx", "voice-assistant"]
+classifiers = [
+    "Operating System :: MacOS",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Education",
+    "Topic :: Multimedia :: Sound/Audio :: Speech",
+]
 dependencies = [
     "fastapi>=0.115",
     "uvicorn[standard]>=0.30",
     "python-multipart>=0.0.9",
-    "pydantic>=2.7",
     "numpy>=1.26",
     "scipy>=1.13",
     "soundfile>=0.12",
-    "piper-tts>=1.2",
     "onnxruntime>=1.18",
-    "transformers>=4.44",
-    "torch>=2.3",
     "huggingface-hub>=0.24",
-    "anthropic>=0.40",
-    "mlx-whisper>=0.4.3",
+    "piper-tts>=1.3",       # text-to-speech
+    "mlx-whisper>=0.4.3",   # speech-to-text (NB-Whisper)
+    "mlx-lm>=0.19",         # conversation model (Borealis)
 ]
 
-[project.optional-dependencies]
-mlx = ["mlx-lm>=0.19"]
+[project.scripts]
+prat = "prat.__main__:main"
+
+[project.urls]
+Repository = "https://github.com/alirezaelahi/norsk-prat"
 
 [dependency-groups]
-dev = [
-    "pytest>=8",
-    "httpx>=0.27",
-    "playwright>=1.63.0",
-]
+dev = ["pytest>=8", "httpx2"]
+e2e = ["playwright>=1.47", "websockets>=12"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["prat"]
+
+[tool.uv]
+default-groups = ["dev"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 120
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+ignore = ["B905", "B008", "E501"]

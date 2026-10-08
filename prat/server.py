@@ -4,15 +4,24 @@ from __future__ import annotations
 
 import logging
 import threading
-from typing import Callable, Generic, TypeVar
+from collections.abc import Callable
+from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import (
+    FastAPI,
+    File,
+    Form,
+    HTTPException,
+    UploadFile,
+    WebSocket,
+    WebSocketDisconnect,
+)
 from fastapi.responses import FileResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 from . import config
-from .llm import Partner, Turn, make_partner
+from .practice import Partner, Turn, make_partner
 from .scenarios import LEVELS, SCENARIOS
 from .scoring import score
 from .store import Store
@@ -20,10 +29,9 @@ from .stt import STT
 from .tts import TTS, list_voices
 
 log = logging.getLogger("prat")
-T = TypeVar("T")
 
 
-class Lazy(Generic[T]):
+class Lazy[T]:
     """Build an expensive object on first use (models load on demand, not at startup)."""
 
     def __init__(self, factory: Callable[[], T]):
@@ -67,13 +75,21 @@ class VocabReq(BaseModel):
     example: str = ""
 
 
+def _log_warm_up(fut) -> None:
+    if fut.exception():
+        log.error("Model warm-up failed: %s", fut.exception())
+    else:
+        log.warning("Models ready.")
+
+
 def create_app(
     tts: TTS | None = None,
     stt: STT | None = None,
     partner: Partner | Callable[[], Partner] | None = None,
     store: Store | None = None,
+    preload: bool = False,
 ) -> FastAPI:
-    app = FastAPI(title="Prat — norsk samtaletrening")
+    """Build the app. Tests pass fakes; ``preload=True`` loads and warms all models at startup."""
     tts = tts or TTS()
     stt_lazy = Lazy(lambda: stt or STT())
     if isinstance(partner, Partner):
@@ -81,7 +97,21 @@ def create_app(
     else:
         partner_lazy = Lazy(partner or make_partner)
     store = store or Store(config.DATA_DIR / "prat.db")
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        if preload:
+            from .live.session import MLX_EXEC
+            from .models import warm_up
+
+            log.info("Loading and warming up models…")
+            app.state.warm = MLX_EXEC.submit(warm_up, stt_lazy.get(), tts)
+            app.state.warm.add_done_callback(_log_warm_up)
+        yield
+
+    app = FastAPI(title="Prat — norsk samtaletrening", lifespan=lifespan)
     app.state.partner = partner_lazy
+    app.state.warm = None  # Future of the startup warm-up
 
     def _session(sid: str) -> dict:
         s = store.get_session(sid)
@@ -98,9 +128,7 @@ def create_app(
         return {
             "voices": [v.__dict__ for v in list_voices()],
             "default_voice": config.DEFAULT_VOICE,
-            "scenarios": [
-                {"id": s.id, "title": s.title, "title_en": s.title_en, "goal": s.goal} for s in SCENARIOS
-            ],
+            "scenarios": [{"id": s.id, "title": s.title, "title_en": s.title_en, "goal": s.goal} for s in SCENARIOS],
             "levels": list(LEVELS),
             "partner": partner_lazy.get().name if partner_lazy.loaded else None,
             "stt_model": config.STT_MODEL,
@@ -108,7 +136,9 @@ def create_app(
 
     @app.post("/api/warmup")
     def warmup():
-        """Load the models so the first real turn is fast."""
+        """Block until the models are loaded and warm (the UI waits on this before enabling talk)."""
+        if app.state.warm is not None:
+            app.state.warm.result()
         p = partner_lazy.get()
         stt_lazy.get()._load()
         tts.speak("Hei!")
@@ -120,7 +150,7 @@ def create_app(
         try:
             wav = tts.speak(req.text, req.voice, req.speed)
         except ValueError as e:
-            raise HTTPException(400, str(e))
+            raise HTTPException(400, str(e)) from e
         return Response(wav, media_type="audio/wav", headers={"Cache-Control": "max-age=86400"})
 
     @app.post("/api/stt")
@@ -129,7 +159,7 @@ def create_app(
             return {"text": stt_lazy.get().transcribe(audio.file.read())}
         except Exception as e:  # unreadable audio etc.
             log.exception("stt failed")
-            raise HTTPException(400, f"could not transcribe audio: {e}")
+            raise HTTPException(400, f"could not transcribe audio: {e}") from e
 
     @app.post("/api/shadow")
     def post_shadow(audio: UploadFile = File(...), target: str = Form(...)):
@@ -248,7 +278,9 @@ def create_app(
 
         await ws.accept()
         loop = asyncio.get_running_loop()
-        # Load models off the event loop (first connection only).
+        # Load and warm the models off the event loop (instant if the startup preload is done).
+        if app.state.warm is not None:
+            await asyncio.wrap_future(app.state.warm)
         lm = await loop.run_in_executor(MLX_EXEC, get_local_lm)
         stt_obj = await loop.run_in_executor(MLX_EXEC, stt_lazy.get)
         await loop.run_in_executor(MLX_EXEC, stt_obj._load)  # compile Whisper kernels before turn 1

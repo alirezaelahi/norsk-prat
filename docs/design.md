@@ -1,25 +1,30 @@
-# Status against the spec
+# Design goals and status
 
-**Spec:** [Norwegian Voice Tutor — Spec](https://app.notion.com/p/3ec545542aed81099e10d13aa7ab893c) (Notion).
-This file records how the build meets it and where it differs. Measurements were taken on an
-**M1 Pro with 16 GB** (the spec targets a 40 GB MacBook) using the headless real-time test
-`tests/e2e/live_client.py` (synthetic learner speech streamed at real-time pace).
+Prat was built against a short design spec ("Norwegian Voice Tutor"). Its central requirement:
 
-## Acceptance criteria (§2)
+> A local, offline, spoken Norwegian conversation partner. Continuous back-and-forth
+> conversation, not dictation and not push-to-talk. **It must feel smooth**: lag, talking over
+> the user, cutting them off mid-thought, or losing the thread make it unusable.
+
+This page records how the build meets each goal and where it differs. Measurements were taken
+on an **M1 Pro with 16 GB** (the spec targeted a 40 GB MacBook) using the headless real-time
+test `tests/e2e/live_client.py`, which streams synthetic learner speech at real-time pace.
+
+## Acceptance criteria
 
 | Criterion | Target | Measured | |
 |---|---|---|---|
 | First audio after the learner stops | ≤ ~1.0 s (700–900 ms ideal) | **median ≈ 0.95–1.0 s**, range 0.81–1.3 s over typical turns | ✅ / borderline |
 | Perceived gap after the silence window | ≤ ~700 ms | **10–500 ms**, usually under 250 ms | ✅ |
 | No premature cut-off | wait through learner pauses | 800 ms window (live slider 400–2000), **+700 ms if the transcript looks unfinished** ("…og", "eh", no final punctuation); a reply already queued is dropped if the learner starts talking again, and the two parts are merged | ✅ (tested: "Jeg har to barn og … en hund") |
-| Barge-in | tutor stops ≤ ~200 ms | **110–180 ms after speech is confirmed** (confirmation needs 256 ms of speech, to ignore coughs) | ✅ |
+| Barge-in | tutor stops ≤ ~200 ms | **~90–180 ms after speech is confirmed** (confirmation needs 256 ms of speech, to ignore coughs) | ✅ |
 | No self-echo | tutor never transcribed | browser echo cancellation + stricter VAD threshold while the tutor talks + headphones hint | ⚠️ not testable headless; see deviations |
 | Correct Norwegian | bokmål, natural | Borealis 4B 8-bit: natural, recasts errors; occasional slips (see bake-off) | ✅ mostly |
-| Fully local | no keys, no network after download | default backend is local; Claude is opt-in via `PRAT_LLM=claude` | ✅ |
+| Fully local | no keys, no network after download | all models local; `prat` switches to offline mode once everything is downloaded | ✅ |
 
-Every turn's timings are written to `data/latency.jsonl` and shown live in the UI (§10).
+Every turn's timings are written to `data/latency.jsonl` and shown live in the UI.
 
-## Per-stage latency (§5)
+## Per-stage latency
 
 | Stage | Budget | Measured (median) |
 |---|---|---|
@@ -34,7 +39,7 @@ The audio is held back until the 800 ms window confirms the turn, and thrown awa
 talking. Most of the pipeline runs *inside* the silence window, which is why the gap after the
 window is usually under 250 ms even though the stages add up to about 800 ms.
 
-## Components (§4)
+## Components
 
 | Spec | Built |
 |---|---|
@@ -45,10 +50,10 @@ window is usually under 250 ms even though the stages add up to about 800 ms.
 | 4.5 Sentence chunker | `prat/live/chunker.py`; first chunk may flush at a comma after 4 words |
 | 4.6 Piper, ~0.9× speed, adjustable | Piper `talesyntese` (default) + 10 `nvcc` speakers; 0.9× default; slider plus "saktere"/"fortere" voice commands |
 | 4.7 Barge-in, truthful history | Server stops the client, cancels LLM and TTS; the client reports how much of the current chunk was heard; history keeps only what was heard ("To barn – det…") |
-| §7 Tutor behaviour | `prat/live/tutor.py`: bokmål only (English questions answered briefly), 1–3 sentences, ends with a question, recasting with at most one explicit correction, start level from the UI with adaptation, no markdown or emoji |
-| §7 Voice modes | "gjenta" (instant replay, no LLM), "saktere"/"fortere", "forklar X"/"hva betyr X", "la oss øve på kafé/lege/NAV/jobbintervju/…" (switches role-play); free chat by default |
-| §8 v2: summary, live transcript | Already in: live transcript (tap a word for its meaning), end-of-session summary with corrections |
-| §10 Instrumentation | Per-turn timestamps: speech end, turn end, STT, first token, first sentence, TTS, first audio out. Shown in the UI and logged to JSONL |
+| Tutor behaviour | `prat/live/tutor.py`: bokmål only (English questions answered briefly), 1–3 sentences, ends with a question, recasting with at most one explicit correction, start level from the UI with adaptation, no markdown or emoji |
+| Voice modes | "gjenta" (instant replay, no LLM), "saktere"/"fortere", "forklar X"/"hva betyr X", "la oss øve på kafé/lege/NAV/jobbintervju/…" (switches role-play); free chat by default |
+| v2: summary, live transcript | Already in: live transcript (tap a word for its meaning), end-of-session summary with corrections |
+| Instrumentation | Per-turn timestamps: speech end, turn end, STT, first token, first sentence, TTS, first audio out. Shown in the UI and logged to JSONL |
 
 ## Deviations and why
 
@@ -64,7 +69,7 @@ window is usually under 250 ms even though the stages add up to about 800 ms.
 - **The LLM is Borealis 4B 8-bit.** 12B didn't fit alongside everything else in 16 GB. Try it on
   the 40 GB machine: `PRAT_MLX_MODEL=NbAiLab/borealis-12b-instruct-preview-mlx-8bit`.
 
-## Model bake-off so far (§9.7)
+## Model bake-off so far
 
 | Model | First token | First sentence | Norwegian quality |
 |---|---|---|---|
@@ -77,7 +82,7 @@ window is usually under 250 ms even though the stages add up to about 800 ms.
 and the first token jumped to 1.5–2 s. On the 40 GB target this shouldn't happen. On small
 machines, the 4-bit model halves the LLM's memory.
 
-## Open questions from §11, answered
+## Open questions, answered
 
 - *Does NB-Whisper have an MLX build?* Yes: community conversions for tiny to large (small and medium used here).
 - *Piper Norwegian voice quality?* `talesyntese` is clear (an NB-Whisper round trip is word-perfect); the
@@ -92,5 +97,5 @@ machines, the 4-bit model halves the LLM's memory.
 
 - Native macOS client with VPIO echo cancellation (only needed if browser AEC isn't good enough with speakers).
 - Running summary for very long sessions (the rolling window currently drops old turns).
-- A persistent learner profile across sessions (§8).
+- A persistent learner profile across sessions.
 - A semantic end-of-turn model; an F5-TTS / Chatterbox voice comparison.

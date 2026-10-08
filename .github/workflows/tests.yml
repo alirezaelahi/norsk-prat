@@ -1,0 +1,17 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  unit:
+    # Apple silicon runner: the MLX dependencies only install on macOS arm64.
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+      - run: uv sync
+      - run: uvx ruff check . && uvx ruff format --check .
+      - run: uv run pytest -q

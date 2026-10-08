@@ -34,7 +34,9 @@ class SileroVAD:
 
         opts = ort.SessionOptions()
         opts.inter_op_num_threads = opts.intra_op_num_threads = 1
-        self.session = ort.InferenceSession(str(path or model_path()), sess_options=opts, providers=["CPUExecutionProvider"])
+        self.session = ort.InferenceSession(
+            str(path or model_path()), sess_options=opts, providers=["CPUExecutionProvider"]
+        )
         self.reset()
 
     def reset(self) -> None:

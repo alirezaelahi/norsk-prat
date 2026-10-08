@@ -1,6 +1,6 @@
 """Norwegian text-to-speech engines.
 
-Each voice has an id like ``piper:talesyntese``, ``piper:nvcc:KON`` or ``mms:nob``.
+Each voice has an id like ``piper:talesyntese`` or ``piper:nvcc:KON``.
 Engines load lazily on first use; synthesis results are cached in memory.
 """
 
@@ -10,6 +10,7 @@ import json
 import threading
 from collections import OrderedDict
 from dataclasses import dataclass
+from pathlib import Path
 
 import numpy as np
 
@@ -38,9 +39,13 @@ def list_voices() -> list[Voice]:
     voices = [Voice("piper:talesyntese", "Talesyntese (mann)", "piper", "Piper · clearest diction")]
     for code, _ in sorted(_nvcc_speakers().items(), key=lambda kv: kv[1]):
         voices.append(
-            Voice(f"piper:nvcc:{code}", f"NVCC {GENDER.get(code[0], '?')} · {code[1:]}", "piper", "Piper · multi-speaker, regional variety")
+            Voice(
+                f"piper:nvcc:{code}",
+                f"NVCC {GENDER.get(code[0], '?')} · {code[1:]}",
+                "piper",
+                "Piper · multi-speaker, regional variety",
+            )
         )
-    voices.append(Voice("mms:nob", "MMS Bokmål (experimental)", "mms", "Meta MMS VITS · less accurate"))
     return voices
 
 
@@ -59,18 +64,23 @@ class PiperEngine:
         self._voice = None
         self._lock = threading.Lock()
 
+    def download(self) -> Path:
+        """Fetch the voice once into ./models/piper; afterwards it works offline."""
+        from huggingface_hub import hf_hub_download
+
+        base = PIPER_VOICES[self.name]
+        local = config.MODELS_DIR / "piper"
+        onnx = local / f"{base}.onnx"
+        if not (onnx.exists() and onnx.with_suffix(".onnx.json").exists()):
+            hf_hub_download(PIPER_REPO, f"{base}.onnx", local_dir=local)
+            hf_hub_download(PIPER_REPO, f"{base}.onnx.json", local_dir=local)
+        return onnx
+
     def _load(self):
         if self._voice is None:
-            from huggingface_hub import hf_hub_download
             from piper import PiperVoice
 
-            base = PIPER_VOICES[self.name]
-            local = config.MODELS_DIR / "piper"
-            onnx = local / f"{base}.onnx"
-            if not (onnx.exists() and onnx.with_suffix(".onnx.json").exists()):  # download once; then offline
-                hf_hub_download(PIPER_REPO, f"{base}.onnx", local_dir=local)
-                hf_hub_download(PIPER_REPO, f"{base}.onnx.json", local_dir=local)
-            self._voice = PiperVoice.load(onnx)
+            self._voice = PiperVoice.load(self.download())
         return self._voice
 
     def synthesize(self, text: str, speed: float, speaker: str | None) -> tuple[np.ndarray, int]:
@@ -93,28 +103,6 @@ class PiperEngine:
         return np.concatenate(parts[:-1]), sr
 
 
-class MMSEngine:
-    repo = "thomasht86/mms-tts-nob"  # ungated mirror of facebook/mms-tts-nob
-
-    def __init__(self):
-        self._model = self._tok = None
-        self._lock = threading.Lock()
-
-    def synthesize(self, text: str, speed: float, speaker: str | None) -> tuple[np.ndarray, int]:
-        import torch
-
-        with self._lock:
-            if self._model is None:
-                from transformers import AutoTokenizer, VitsModel
-
-                self._tok = AutoTokenizer.from_pretrained(self.repo)
-                self._model = VitsModel.from_pretrained(self.repo).eval()
-            self._model.speaking_rate = speed
-            with torch.no_grad():
-                wav = self._model(**self._tok(text, return_tensors="pt")).waveform[0].numpy()
-            return wav, self._model.config.sampling_rate
-
-
 class TTS:
     """Voice registry + LRU cache of rendered WAV bytes."""
 
@@ -127,7 +115,7 @@ class TTS:
     def _engine(self, key: str):
         with self._lock:
             if key not in self._engines:
-                self._engines[key] = MMSEngine() if key == "mms" else PiperEngine(key)
+                self._engines[key] = PiperEngine(key)
             return self._engines[key]
 
     def speak(self, text: str, voice_id: str = config.DEFAULT_VOICE, speed: float = 1.0) -> bytes:
@@ -150,8 +138,6 @@ class TTS:
         parts = voice_id.split(":")
         if parts[0] == "piper" and len(parts) >= 2 and parts[1] in PIPER_VOICES:
             engine, speaker = self._engine(parts[1]), (parts[2] if len(parts) > 2 else None)
-        elif voice_id == "mms:nob":
-            engine, speaker = self._engine("mms"), None
         else:
             raise ValueError(f"unknown voice: {voice_id}")
 

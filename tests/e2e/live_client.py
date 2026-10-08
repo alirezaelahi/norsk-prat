@@ -101,8 +101,12 @@ class Client:
     async def stop(self):
         p, self.playing = self.playing, None
         self.queue.clear()
-        report = {"type": "stopped", "id": p["id"] if p else None,
-                  "played": time.perf_counter() - p["start"] if p else 0, "duration": p["duration"] if p else 0}
+        report = {
+            "type": "stopped",
+            "id": p["id"] if p else None,
+            "played": time.perf_counter() - p["start"] if p else 0,
+            "duration": p["duration"] if p else 0,
+        }
         print(f"  [{self.t():6.2f}] STOP received -> {report}")
         await self.ws.send(json.dumps(report))
 
@@ -171,7 +175,9 @@ async def main():
         stops = [t for t, m in c.log[n_log:] if m["type"] == "stop"]
         if stops:
             after = (stops[0] + c.t0 - t_barge) * 1000 - onset
-            print(f"  barge-in: stop arrived {after:.0f} ms after speech onset (gate 256 ms -> {after - 256:.0f} ms after confirmation)")
+            print(
+                f"  barge-in: stop arrived {after:.0f} ms after speech onset (gate 256 ms -> {after - 256:.0f} ms after confirmation)"
+            )
         await c.wait_tutor_quiet()
 
         print("== voice command: gjenta")

@@ -1,4 +1,5 @@
-// Prat — front-end. Plain JS, no build step.
+// Prat — shared UI: settings, API helpers, playback, word popover, shadowing, summary, lists.
+// Loaded first; practice.js and live-ui.js add the two modes. No build step.
 const $ = (sel, root = document) => root.querySelector(sel);
 const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 
@@ -114,12 +115,16 @@ async function init() {
 
   // Load models in the background so the first turn is quick.
   api("/api/warmup", { method: "POST" })
-    .then((r) => setStatus(`Klar · ${partnerLabel(r.partner)}`, "ok"))
+    .then((r) => {
+      setStatus(`Klar · ${partnerLabel(r.partner)}`, "ok");
+      $("#orb").disabled = false;
+      if (!state.live) setOrb("idle");
+    })
     .catch((e) => setStatus("Feil ved lasting: " + e.message, "err"));
 }
 
 function partnerLabel(name) {
-  return { claude: "Claude", borealis: "Borealis (lokal)", scripted: "Manus (offline)" }[name] || name;
+  return { borealis: "Borealis (lokal)" }[name] || name;
 }
 
 function setStatus(text, kind = "") {
@@ -139,78 +144,6 @@ function switchTab(tab) {
   $("#vocab").classList.toggle("hidden", tab !== "vocab");
 }
 
-function setComposerEnabled(on) {
-  for (const id of ["input", "sendBtn", "micBtn", "helpBtn"]) $("#" + id).disabled = !on;
-}
-
-// ------------------------------------------------------------------ sessions
-async function startSession() {
-  if (state.busy) return;
-  $("#sidebar").classList.remove("open");
-  state.busy = true;
-  $("#chat").innerHTML = "";
-  hideSuggestions();
-  const typing = addTyping();
-  try {
-    const r = await api("/api/sessions", { body: { scenario: state.scenario, level: state.level } });
-    state.session = { ...r.session, turns: [r.turn] };
-    typing.remove();
-    showGoal();
-    const el = renderTurn(r.turn);
-    setComposerEnabled(true);
-    $("#input").focus();
-    refreshHistory();
-    playTurn(el, r.turn.text);
-  } catch (e) {
-    typing.remove();
-    addNotice("Kunne ikke starte samtalen: " + e.message);
-  } finally {
-    state.busy = false;
-  }
-}
-
-async function openSession(id) {
-  const s = await api(`/api/sessions/${id}`);
-  state.session = s;
-  state.scenario = s.scenario; state.level = s.level; markSelected();
-  $("#chat").innerHTML = "";
-  hideSuggestions();
-  showGoal();
-  s.turns.forEach((t) => renderTurn(t, { restore: true }));
-  setComposerEnabled(true);
-  $("#sidebar").classList.remove("open");
-}
-
-function showGoal() {
-  const sc = state.config.scenarios.find((s) => s.id === state.session.scenario);
-  $("#goal").innerHTML = `<b>${esc(sc.title)}</b> · ${state.session.level} — <span class="muted">${esc(sc.goal)}</span>`;
-  $("#goalBar").classList.remove("hidden");
-}
-
-async function sendText(text) {
-  text = text.trim();
-  if (!text || state.busy || !state.session) return;
-  state.busy = true;
-  $("#input").value = "";
-  hideSuggestions();
-  const pending = renderTurn({ role: "user", text, id: null });
-  const typing = addTyping();
-  try {
-    const r = await api(`/api/sessions/${state.session.id}/turn`, { body: { text } });
-    state.session.turns.push(r.user_turn, r.partner_turn);
-    pending.dataset.id = r.user_turn.id;
-    typing.remove();
-    if ($("#autoFeedback").checked) loadFeedback(pending, r.user_turn.id);
-    const el = renderTurn(r.partner_turn);
-    playTurn(el, r.partner_turn.text);
-  } catch (e) {
-    typing.remove();
-    addNotice("Noe gikk galt: " + e.message);
-  } finally {
-    state.busy = false;
-    $("#input").focus();
-  }
-}
 
 // ------------------------------------------------------------------ rendering
 function esc(s) {
@@ -222,113 +155,7 @@ function wordify(text) {
   return esc(text).replace(/(\p{L}[\p{L}\p{N}'’-]*)/gu, '<span class="w">$1</span>');
 }
 
-function renderTurn(turn, { restore = false } = {}) {
-  const el = document.createElement("div");
-  el.className = `msg ${turn.role}`;
-  if (turn.id) el.dataset.id = turn.id;
-  if (turn.role === "partner") {
-    el.innerHTML = `
-      <div class="bubble">
-        <div class="no">${wordify(turn.text)}</div>
-        <div class="reveal">Trykk for å vise teksten</div>
-        <div class="en hidden"></div>
-      </div>
-      <div class="tools">
-        <button data-act="play" title="Spill av">▶</button>
-        <button data-act="slow" title="Sakte">🐢</button>
-        <button data-act="en" title="Oversett">EN</button>
-        <button data-act="shadow" title="Øv på uttalen">🎙 Øv</button>
-      </div>`;
-    el.querySelector(".reveal").addEventListener("click", () => el.classList.add("revealed"));
-    el.querySelector('[data-act="play"]').addEventListener("click", () => speak(turn.text));
-    el.querySelector('[data-act="slow"]').addEventListener("click", () => speak(turn.text, { slow: true }));
-    el.querySelector('[data-act="en"]').addEventListener("click", () => toggleTranslation(el, el.dataset.id));
-    el.querySelector('[data-act="shadow"]').addEventListener("click", () => openShadow(turn.text));
-    if (restore && turn.extra?.translation) {
-      const en = el.querySelector(".en");
-      en.textContent = turn.extra.translation;
-    }
-  } else {
-    el.innerHTML = `<div class="bubble">${esc(turn.text)}</div><div class="feedback"></div>`;
-    if (restore && turn.extra && "feedback" in turn.extra) showFeedback(el, turn.extra.feedback);
-  }
-  const empty = $("#chat .empty");
-  if (empty) empty.remove();
-  $("#chat").appendChild(el);
-  scrollDown();
-  return el;
-}
 
-async function playTurn(el, text) {
-  el.classList.add("speaking");
-  try { await speak(text); } catch (e) { addNotice("Lyd feilet: " + e.message); }
-  el.classList.remove("speaking");
-}
-
-function addTyping() {
-  const el = document.createElement("div");
-  el.className = "msg partner typing";
-  el.innerHTML = '<div class="bubble"><span></span><span></span><span></span></div>';
-  $("#chat").appendChild(el);
-  scrollDown();
-  return el;
-}
-
-function addNotice(text) {
-  const el = document.createElement("div");
-  el.className = "notice";
-  el.textContent = text;
-  $("#chat").appendChild(el);
-  scrollDown();
-}
-
-function scrollDown() {
-  const c = $("#chat");
-  c.scrollTop = c.scrollHeight;
-}
-
-async function toggleTranslation(el, id) {
-  const en = el.querySelector(".en");
-  if (!en.classList.contains("hidden")) return en.classList.add("hidden");
-  en.classList.remove("hidden");
-  if (!en.textContent) {
-    en.textContent = "…";
-    try {
-      const r = await api(`/api/turns/${id}/translation`, { method: "POST" });
-      en.textContent = r.translation || "(ingen oversettelse tilgjengelig)";
-    } catch (e) { en.textContent = "Feil: " + e.message; }
-  }
-}
-
-// ------------------------------------------------------------------ feedback
-async function loadFeedback(el, id) {
-  const box = el.querySelector(".feedback");
-  box.innerHTML = '<span class="muted small">sjekker…</span>';
-  try {
-    const r = await api(`/api/turns/${id}/feedback`, { method: "POST" });
-    showFeedback(el, r.feedback);
-  } catch { box.innerHTML = ""; }
-}
-
-function showFeedback(el, fb) {
-  const box = el.querySelector(".feedback");
-  const original = el.querySelector(".bubble").textContent;
-  if (!fb) { box.innerHTML = '<span class="ok">✓ Bra!</span>'; return; }
-  box.innerHTML = `
-    <div class="fix">
-      <div class="diff">${diffWords(original, fb.corrected)}</div>
-      ${fb.explanation ? `<div class="why">${esc(fb.explanation)}</div>` : ""}
-      <div class="fix-tools">
-        <button data-act="play">▶</button>
-        <button data-act="shadow">🎙 Øv</button>
-      </div>
-    </div>`;
-  box.querySelector('[data-act="play"]').addEventListener("click", () => speak(fb.corrected));
-  box.querySelector('[data-act="shadow"]').addEventListener("click", () => openShadow(fb.corrected));
-  scrollDown();
-}
-
-// Word-level LCS diff: removed words struck through, added words highlighted.
 function diffWords(a, b) {
   const norm = (w) => w.toLowerCase().replace(/[^\p{L}\p{N}]/gu, "");
   const A = a.split(/\s+/).filter(Boolean), B = b.split(/\s+/).filter(Boolean);
@@ -380,82 +207,6 @@ async function showSummaryFor(sessionId) {
   } catch (e) { body.innerHTML = `<p class="muted">Feil: ${esc(e.message)}</p>`; }
 }
 
-// ------------------------------------------------------------------ suggestions
-async function showSuggestions() {
-  if (!state.session) return;
-  const box = $("#suggestions");
-  box.classList.remove("hidden");
-  box.innerHTML = '<span class="muted small">Tenker på forslag…</span>';
-  try {
-    const r = await api(`/api/sessions/${state.session.id}/suggestions`, { method: "POST" });
-    if (!r.suggestions.length) { box.innerHTML = '<span class="muted small">Ingen forslag tilgjengelig.</span>'; return; }
-    box.innerHTML = r.suggestions
-      .map((s, i) => `<div class="sugg"><button data-i="${i}" class="say" title="Lytt">🔊</button><span>${esc(s)}</span><button data-i="${i}" class="use" title="Bruk">↵</button><button data-i="${i}" class="practice" title="Øv">🎙</button></div>`)
-      .join("") + '<button class="close-sugg icon-btn" title="Lukk">✕</button>';
-    $$(".say", box).forEach((b) => b.addEventListener("click", () => speak(r.suggestions[b.dataset.i])));
-    $$(".use", box).forEach((b) => b.addEventListener("click", () => { $("#input").value = r.suggestions[b.dataset.i]; $("#input").focus(); }));
-    $$(".practice", box).forEach((b) => b.addEventListener("click", () => openShadow(r.suggestions[b.dataset.i])));
-    $(".close-sugg", box).addEventListener("click", hideSuggestions);
-  } catch (e) { box.innerHTML = `<span class="muted small">Feil: ${esc(e.message)}</span>`; }
-}
-
-function hideSuggestions() {
-  $("#suggestions").classList.add("hidden");
-  $("#suggestions").innerHTML = "";
-}
-
-// ------------------------------------------------------------------ microphone
-let recorder;
-
-function setupMic() {
-  recorder = new Recorder((lvl) => ($("#micLevel").style.transform = `scale(${1 + Math.min(lvl * 3, 1.2)})`));
-  const btn = $("#micBtn");
-  btn.addEventListener("click", () => (recorder.recording ? stopMic() : startMic()));
-
-  // Hold space to talk (when not typing in the input).
-  let spaceDown = false;
-  document.addEventListener("keydown", (e) => {
-    if (e.code !== "Space" || e.repeat || spaceDown || btn.disabled) return;
-    if (["INPUT", "TEXTAREA", "SELECT", "BUTTON"].includes(document.activeElement.tagName) || $("#shadow").open) return;
-    e.preventDefault();
-    spaceDown = true;
-    startMic();
-  });
-  document.addEventListener("keyup", (e) => {
-    if (e.code === "Space" && spaceDown) { spaceDown = false; e.preventDefault(); stopMic(); }
-  });
-}
-
-async function startMic() {
-  if (currentAudio) currentAudio.pause();
-  try {
-    await recorder.start();
-    $("#micBtn").classList.add("recording");
-    $("#input").placeholder = "Lytter… (trykk igjen eller slipp mellomrom for å stoppe)";
-  } catch (e) {
-    addNotice("Fikk ikke tilgang til mikrofonen: " + e.message);
-  }
-}
-
-async function stopMic() {
-  const rec = await recorder.stop();
-  $("#micBtn").classList.remove("recording");
-  $("#input").placeholder = "Skriv på norsk…";
-  if (!rec || rec.seconds < 0.4) return;
-  $("#input").placeholder = "Transkriberer…";
-  const form = new FormData();
-  form.append("audio", rec.blob, "speech.wav");
-  try {
-    const r = await api("/api/stt", { form });
-    $("#input").placeholder = "Skriv på norsk…";
-    if (!r.text) { addNotice("Jeg hørte ikke noe. Prøv igjen, litt nærmere mikrofonen."); return; }
-    if ($("#autoSend").checked) sendText(r.text);
-    else { $("#input").value = r.text; $("#input").focus(); }
-  } catch (e) {
-    $("#input").placeholder = "Skriv på norsk…";
-    addNotice("Talegjenkjenning feilet: " + e.message);
-  }
-}
 
 // ------------------------------------------------------------------ word popover
 function setupWordPopover() {
@@ -579,177 +330,7 @@ async function refreshVocab() {
   });
 }
 
-// ------------------------------------------------------------------ live conversation
-const ORB_LABEL = {
-  idle: "Trykk for å starte",
-  connecting: "Laster modellene…",
-  listening: "Jeg lytter…",
-  user: "Du snakker",
-  thinking: "Tenker…",
-  speaking: "Snakker",
-};
 
-function setupLive() {
-  $$(".mode").forEach((b) => b.addEventListener("click", () => setMode(b.dataset.mode)));
-  setMode(state.prefs.mode || "live");
-  $("#orb").addEventListener("click", () => (state.live ? stopLive() : startLive()));
-  $("#endBtn").addEventListener("click", stopLive);
-  $("#muteBtn").addEventListener("click", () => {
-    if (!state.live) return;
-    const m = !state.live.muted;
-    state.live.setMuted(m);
-    $("#muteBtn").textContent = m ? "🎙 Slå på mikrofon" : "🔇 Demp";
-    $("#orb").classList.toggle("muted", m);
-  });
-  $("#liveTextForm").addEventListener("submit", (e) => {
-    e.preventDefault();
-    const t = $("#liveText").value.trim();
-    if (t && state.live) { state.live.sendText(t); $("#liveText").value = ""; }
-  });
-  $("#liveSummaryBtn").addEventListener("click", () => state.liveSessionId && showSummaryFor(state.liveSessionId));
-  if (state.prefs.hintClosed) $("#hint").classList.add("hidden");
-  $("#hintClose").addEventListener("click", () => { $("#hint").classList.add("hidden"); state.prefs.hintClosed = true; savePrefs(); });
-  const endMs = $("#endMs");
-  endMs.value = state.prefs.endMs || 800;
-  const showEnd = () => ($("#endMsVal").textContent = `${endMs.value} ms`);
-  showEnd();
-  endMs.addEventListener("input", () => {
-    showEnd(); state.prefs.endMs = +endMs.value; savePrefs();
-    state.live?.settings({ end_ms: +endMs.value });
-  });
-  // Live-adjust speed and voice during a conversation.
-  $("#speed").addEventListener("change", () => state.live?.settings({ speed: +$("#speed").value }));
-  $("#voice").addEventListener("change", () => state.live?.settings({ voice: $("#voice").value }));
-  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && state.live) stopLive(); });
-}
-
-function setMode(mode) {
-  if (mode !== "live" && state.live) stopLive();
-  state.mode = mode; state.prefs.mode = mode; savePrefs();
-  $$(".mode").forEach((b) => b.classList.toggle("active", b.dataset.mode === mode));
-  $("#liveView").classList.toggle("hidden", mode !== "live");
-  $("#practiceView").classList.toggle("hidden", mode === "live");
-  document.body.classList.toggle("mode-live", mode === "live");
-  $("#startBtn").textContent = mode === "live" ? "Start samtale 🎧" : "Start øving";
-}
-
-function setOrb(st) {
-  const orb = $("#orb");
-  orb.className = `orb ${st}${state.live?.muted ? " muted" : ""}`;
-  $("#orbLabel").textContent = ORB_LABEL[st] || st;
-}
-
-async function startLive() {
-  if (state.live) await stopLive();
-  $("#sidebar").classList.remove("open");
-  $("#transcript").innerHTML = "";
-  $("#liveCaption").textContent = "";
-  setOrb("connecting");
-  const sc = state.config.scenarios.find((s) => s.id === state.scenario);
-  $("#liveGoalText").innerHTML = `<b>${esc(sc.title)}</b> · ${state.level} — <span class="muted">${esc(sc.goal)}</span>`;
-  $("#liveGoal").classList.remove("hidden");
-  const tutorLines = new Map(); // turn -> element
-  const conv = new LiveConversation({
-    state: (st) => { setOrb(st); if (st !== "user") $("#liveCaption").textContent = ""; },
-    level: (lvl) => ($("#orbRing").style.transform = `scale(${1 + Math.min(lvl * 2.5, 0.6)})`),
-    partial: (text) => ($("#liveCaption").textContent = text),
-    waiting: () => ($("#liveCaption").textContent = "Jeg venter — fortsett bare…"),
-    user: (text) => { $("#liveCaption").textContent = ""; addLine("user", text); },
-    tutorStart: (turn, text) => {
-      let el = tutorLines.get(turn);
-      if (!el) { el = addLine("tutor", ""); tutorLines.set(turn, el); }
-      const t = el.querySelector(".t");
-      t.innerHTML = wordify((t.textContent + " " + text).trim());
-      scrollTranscript();
-    },
-    tutorDone: (turn, text, interrupted) => {
-      let el = tutorLines.get(turn);
-      if (!el && text) { el = addLine("tutor", ""); tutorLines.set(turn, el); }
-      if (el && interrupted) {
-        el.querySelector(".t").innerHTML = wordify(text || "");
-        el.classList.add("interrupted");
-      }
-    },
-    metrics: showLatency,
-    settings: (m) => { if (m.speed) { $("#speed").value = m.speed; $("#speed").dispatchEvent(new Event("input")); } },
-    scenario: (id) => {
-      state.scenario = id; markSelected();
-      const s2 = state.config.scenarios.find((s) => s.id === id);
-      $("#liveGoalText").innerHTML = `<b>${esc(s2.title)}</b> · ${state.level} — <span class="muted">${esc(s2.goal)}</span>`;
-    },
-    session: (m) => { state.liveSessionId = m.id; refreshHistory(); },
-    error: (msg) => addNotice2(msg),
-    closed: () => { if (state.live === conv) { state.live = null; liveControls(false); setOrb("idle"); } },
-  });
-  state.live = conv;
-  try {
-    await conv.start({
-      scenario: state.scenario, level: state.level, voice: $("#voice").value,
-      speed: +$("#speed").value, end_ms: +$("#endMs").value,
-    });
-    liveControls(true);
-  } catch (e) {
-    state.live = null;
-    setOrb("idle");
-    addNotice2("Fikk ikke tilgang til mikrofonen: " + e.message);
-  }
-}
-
-async function stopLive() {
-  const conv = state.live;
-  state.live = null;
-  liveControls(false);
-  setOrb("idle");
-  if (conv) await conv.stop();
-  refreshHistory();
-}
-
-function liveControls(on) {
-  $("#muteBtn").disabled = $("#endBtn").disabled = $("#liveText").disabled = !on;
-  $("#muteBtn").textContent = "🔇 Demp";
-}
-
-function addLine(who, text) {
-  const el = document.createElement("div");
-  el.className = `line ${who}`;
-  el.innerHTML = `<span class="who">${who === "user" ? "Du" : "Tutor"}</span><span class="t">${who === "user" ? esc(text) : wordify(text)}</span>`;
-  $("#transcript").appendChild(el);
-  scrollTranscript();
-  return el;
-}
-
-function addNotice2(text) {
-  const el = document.createElement("div");
-  el.className = "notice";
-  el.textContent = text;
-  $("#transcript").appendChild(el);
-  scrollTranscript();
-}
-
-function scrollTranscript() {
-  const t = $("#transcript");
-  t.scrollTop = t.scrollHeight;
-}
-
-const LAT_ROWS = [
-  ["speech_end_to_audio_ms", "Fra du slutter → lyd", 1000],
-  ["gap_after_window_ms", "Etter ventetiden", 700],
-  ["stt_ms", "Talegjenkjenning", 300],
-  ["llm_first_token_ms", "Språkmodell, første ord", 300],
-  ["llm_first_sentence_ms", "Første setning", 600],
-  ["tts_first_ms", "Tale (TTS)", 150],
-];
-const latHistory = [];
-
-function showLatency(m) {
-  if (m.speech_end_to_audio_ms != null) latHistory.push(m.speech_end_to_audio_ms);
-  const avg = latHistory.length ? Math.round(latHistory.reduce((a, b) => a + b, 0) / latHistory.length) : null;
-  $("#latBody").innerHTML =
-    LAT_ROWS.filter(([k]) => m[k] != null)
-      .map(([k, label, budget]) => `<div class="lat-row ${m[k] <= budget ? "good" : m[k] <= budget * 1.5 ? "ok" : "bad"}"><span>${label}</span><b>${m[k]} ms</b></div>`)
-      .join("") +
-    (avg != null ? `<div class="lat-row avg"><span>Snitt (${latHistory.length} turer)</span><b>${avg} ms</b></div>` : "") +
-    (m.speculative ? '<div class="muted small">⚡ forberedt under pausen</div>' : "");
-}
-
-init().catch((e) => setStatus("Kunne ikke koble til serveren: " + e.message, "err"));
+document.addEventListener("DOMContentLoaded", () => {
+  init().catch((e) => setStatus("Kunne ikke koble til serveren: " + e.message, "err"));
+});

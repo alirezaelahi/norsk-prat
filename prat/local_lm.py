@@ -67,12 +67,18 @@ class LocalLM:
 
     def _tokens(self, system: str, messages: list[dict]) -> list[int]:
         return self.tokenizer.apply_chat_template(
-            [{"role": "system", "content": system}, *normalize_messages(messages)], add_generation_prompt=True, tokenize=True
+            [{"role": "system", "content": system}, *normalize_messages(messages)],
+            add_generation_prompt=True,
+            tokenize=True,
         )
 
     def _prepare_cache(self, tokens: list[int]) -> int:
         """Reuse the cached prefix; return how many prompt tokens are already cached."""
-        from mlx_lm.models.cache import can_trim_prompt_cache, make_prompt_cache, trim_prompt_cache
+        from mlx_lm.models.cache import (
+            can_trim_prompt_cache,
+            make_prompt_cache,
+            trim_prompt_cache,
+        )
 
         k = _common_prefix(self._cached, tokens) if self._cache is not None else 0
         k = min(k, len(tokens) - 1)  # always feed at least one token
@@ -109,8 +115,12 @@ class LocalLM:
             self.last_stats = {"prompt_tokens": len(tokens), "cached_tokens": k}
             try:
                 for r in stream_generate(
-                    self.model, self.tokenizer, tokens[k:], max_tokens=max_tokens,
-                    sampler=make_sampler(temp=temperature), prompt_cache=cache,
+                    self.model,
+                    self.tokenizer,
+                    tokens[k:],
+                    max_tokens=max_tokens,
+                    sampler=make_sampler(temp=temperature),
+                    prompt_cache=cache,
                 ):
                     generated.append(r.token)
                     if r.text:

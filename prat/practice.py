@@ -1,23 +1,19 @@
-"""Conversation partner: prompts for each tutoring task, over a pluggable text backend.
+"""Practice mode ("Øving"): the tutoring tasks behind the chat view.
 
-The tasks are deliberately small and separate (reply / feedback / translate / gloss /
-suggest) so that a 4B local model handles each reliably and the spoken reply can be
-produced first, with the rest fetched in parallel or on demand.
+Each task is small and separate (reply / feedback / translate / gloss / suggest) so a
+4B local model handles each one reliably, and the spoken reply can be produced first
+with the rest fetched on demand.
 """
 
 from __future__ import annotations
 
-import logging
 import re
-import threading
 from dataclasses import dataclass
 from difflib import SequenceMatcher
 from typing import Protocol
 
 from . import config
 from .scenarios import BY_ID, LEVELS, Scenario
-
-log = logging.getLogger(__name__)
 
 MAX_HISTORY = 20
 
@@ -153,7 +149,9 @@ class Partner:
         return self.backend.name
 
     def _history(self, history: list[Turn]) -> list[dict]:
-        msgs = [{"role": "user" if t.role == "user" else "assistant", "content": t.text} for t in history[-MAX_HISTORY:]]
+        msgs = [
+            {"role": "user" if t.role == "user" else "assistant", "content": t.text} for t in history[-MAX_HISTORY:]
+        ]
         # Chat APIs need the first message to be from the user.
         if not msgs or msgs[0]["role"] != "user":
             msgs.insert(0, {"role": "user", "content": "(Samtalen begynner. Du starter.)"})
@@ -167,7 +165,9 @@ class Partner:
     def feedback(self, text: str) -> dict | None:
         # No conversation context on purpose: with it, small models tend to answer the
         # sentence instead of correcting it.
-        raw = self.backend.complete(FEEDBACK_SYSTEM, [{"role": "user", "content": f"Student sentence: «{text}»"}], 200, 0.0)
+        raw = self.backend.complete(
+            FEEDBACK_SYSTEM, [{"role": "user", "content": f"Student sentence: «{text}»"}], 200, 0.0
+        )
         fb = parse_feedback(text, raw)
         if fb and not self.backend.explains:
             fb["explanation"] = ""
@@ -190,72 +190,14 @@ class Partner:
         return parse_lines(raw)
 
 
-class ScriptedPartner(Partner):
-    """Offline fallback when no LLM is available: cycles the scenario's scripted lines."""
-
-    def __init__(self):
-        self.backend = ScriptedBackend()
-
-    def reply(self, scenario_id: str, level: str, history: list[Turn]) -> str:
-        lines = BY_ID[scenario_id].opener
-        n = sum(1 for t in history if t.role == "partner")
-        return lines[n % len(lines)]
-
-    def feedback(self, text: str) -> dict | None:
-        return None
-
-    def translate(self, text: str) -> str:
-        return ""
-
-    def gloss(self, word: str, sentence: str) -> str:
-        return ""
-
-    def suggest(self, scenario_id: str, level: str, history: list[Turn]) -> list[str]:
-        return []
+# --------------------------------------------------------------------------- backend
 
 
-# --------------------------------------------------------------------------- backends
+class LocalBackend:
+    """Borealis on MLX, shared with live mode (one model in memory)."""
 
-
-class ScriptedBackend:
-    name = "scripted"
-    explains = False
-
-    def complete(self, system, messages, max_tokens, temperature) -> str:  # pragma: no cover - unused
-        return ""
-
-
-class ClaudeBackend:
-    name = "claude"
-    explains = True
-
-    def __init__(self, model: str = config.CLAUDE_MODEL, client=None):
-        import anthropic
-
-        self.model = model
-        self.client = client or anthropic.Anthropic()
-
-    def complete(self, system: str, messages: list[dict], max_tokens: int, temperature: float) -> str:
-        # Short conversational tasks: low effort keeps latency down. Sampling params are
-        # not accepted on current models, so `temperature` is ignored here.
-        resp = self.client.beta.messages.create(
-            model=self.model,
-            max_tokens=max(max_tokens * 8, 2000),  # headroom for adaptive thinking
-            system=system,
-            messages=messages,
-            output_config={"effort": "low"},
-            betas=["server-side-fallback-2026-07-01"],
-            fallbacks="default",
-        )
-        if resp.stop_reason == "refusal":
-            log.warning("Claude declined a request: %s", resp.stop_details)
-            return ""
-        return "".join(b.text for b in resp.content if b.type == "text")
-
-
-class MLXBackend:
     name = "borealis"
-    explains = False  # 4B model's corrections are good, its explanations are not
+    explains = False  # the 4B model's corrections are good; its explanations often are not
 
     def __init__(self, model: str = config.MLX_MODEL):
         from .local_lm import get_local_lm
@@ -266,27 +208,5 @@ class MLXBackend:
         return self.lm.complete(system, messages, max_tokens, temperature)
 
 
-def _has_claude_credentials() -> bool:
-    import os
-    from pathlib import Path
-
-    return bool(os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN")) or (
-        Path.home() / ".config" / "anthropic"
-    ).exists()
-
-
-def make_partner(choice: str = config.LLM_BACKEND) -> Partner:
-    """Pick a backend. ``auto``: Claude if credentials exist, else local Borealis, else scripted."""
-    order = {"auto": ["claude", "mlx", "scripted"], "claude": ["claude"], "mlx": ["mlx"], "scripted": ["scripted"]}[choice]
-    for name in order:
-        try:
-            if name == "claude":
-                if choice == "auto" and not _has_claude_credentials():
-                    continue
-                return Partner(ClaudeBackend())
-            if name == "mlx":
-                return Partner(MLXBackend())
-            return ScriptedPartner()
-        except Exception as e:  # missing package, no model, no network...
-            log.warning("LLM backend %s unavailable: %s", name, e)
-    return ScriptedPartner()
+def make_partner() -> Partner:
+    return Partner(LocalBackend())

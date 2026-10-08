@@ -3,7 +3,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from prat.audio import to_wav_bytes
-from prat.llm import Partner
+from prat.practice import Partner
 from prat.server import create_app
 from prat.store import Store
 
@@ -59,7 +59,7 @@ def wav():
 def test_config_lists_voices_scenarios_levels(client):
     c = client.get("/api/config").json()
     ids = [v["id"] for v in c["voices"]]
-    assert "piper:talesyntese" in ids and "mms:nob" in ids
+    assert "piper:talesyntese" in ids
     assert sum(i.startswith("piper:nvcc:") for i in ids) == 10
     assert {s["id"] for s in c["scenarios"]} >= {"kafe", "norskprove", "fri"}
     assert c["levels"] == ["A2", "B1", "B2"]

@@ -4,15 +4,21 @@ Run: ./run.sh --port 8765  &  then  uv run python tests/e2e/ui_smoke.py
 The OS microphone is not available to headless Chromium on macOS, so getUserMedia is
 stubbed with a stream that plays TTS speech through the page's own audio graph.
 """
-import asyncio, os
+
+import asyncio
+import os
+
 from playwright.async_api import async_playwright
-URL=os.environ.get("PRAT_URL", "http://localhost:8765/")
-OUT=os.environ.get("PRAT_SHOTS", "scratch/shots")
+
+URL = os.environ.get("PRAT_URL", "http://localhost:8765/")
+OUT = os.environ.get("PRAT_SHOTS", "scratch/shots")
+
+
 async def main():
     os.makedirs(OUT, exist_ok=True)
     async with async_playwright() as p:
         b = await p.chromium.launch(channel="chromium", args=["--autoplay-policy=no-user-gesture-required"])
-        ctx = await b.new_context(viewport={"width":1280,"height":820})
+        ctx = await b.new_context(viewport={"width": 1280, "height": 820})
         await ctx.add_init_script("""
           // Fake microphone: a stream that plays TTS speech (OS mic permission is unavailable headless).
           navigator.mediaDevices.getUserMedia = async () => {
@@ -27,15 +33,16 @@ async def main():
           };
         """)
         page = await ctx.new_page()
-        errors=[]
-        page.on("console", lambda m: errors.append(f"{m.type}: {m.text}") if m.type in ("error","warning") else None)
+        errors = []
+        page.on("console", lambda m: errors.append(f"{m.type}: {m.text}") if m.type in ("error", "warning") else None)
         page.on("pageerror", lambda e: errors.append(f"pageerror: {e}"))
         await page.goto(URL)
         await page.wait_for_function("document.querySelector('#status').textContent.startsWith('Klar')", timeout=120000)
         print("status:", await page.text_content("#status"))
         await page.screenshot(path=f"{OUT}/1-home.png")
         await page.click(".mode[data-mode=practice]")
-        await page.click(".scenario[data-id=kafe]"); await page.click("#levels button[data-level=A2]")
+        await page.click(".scenario[data-id=kafe]")
+        await page.click("#levels button[data-level=A2]")
         await page.click("#startBtn")
         await page.wait_for_selector(".msg.partner:not(.typing)", timeout=60000)
         print("opener:", await page.text_content(".msg.partner .no"))
@@ -47,14 +54,18 @@ async def main():
         print("reply2:", await page.inner_text(".msg.partner:nth-of-type(3) .no"))
         # translation
         await page.click(".msg.partner:nth-of-type(3) [data-act=en]")
-        await page.wait_for_function("(() => {const e=document.querySelector('.msg.partner:nth-of-type(3) .en'); return e && e.textContent && e.textContent!=='…'})()", timeout=30000)
+        await page.wait_for_function(
+            "(() => {const e=document.querySelector('.msg.partner:nth-of-type(3) .en'); return e && e.textContent && e.textContent!=='…'})()",
+            timeout=30000,
+        )
         print("EN:", await page.inner_text(".msg.partner:nth-of-type(3) .en"))
         # word popover
         await page.click(".msg.partner:nth-of-type(3) .w >> nth=2")
         await page.wait_for_function("document.querySelector('.pop-gloss').textContent!=='…'", timeout=30000)
         print("gloss:", await page.inner_text(".pop-word"), "=", await page.inner_text(".pop-gloss"))
         await page.screenshot(path=f"{OUT}/2-chat-popover.png")
-        await page.click("#wordPop [data-act=save]"); await page.wait_for_timeout(500)
+        await page.click("#wordPop [data-act=save]")
+        await page.wait_for_timeout(500)
         print("vocab count:", await page.text_content("#vocabCount"))
         await page.mouse.click(700, 120)
         # suggestions
@@ -65,7 +76,9 @@ async def main():
         # speech via fake mic
         n_user = await page.locator(".msg.user").count()
         await page.evaluate("recorder.stream = null")
-        await page.click("#micBtn"); await page.wait_for_timeout(4500); await page.click("#micBtn")
+        await page.click("#micBtn")
+        await page.wait_for_timeout(4500)
+        await page.click("#micBtn")
         await page.wait_for_function(f"document.querySelectorAll('.msg.user').length>{n_user}", timeout=60000)
         print("spoken->", await page.inner_text(f".msg.user >> nth={n_user} >> .bubble"))
         await page.wait_for_function("document.querySelectorAll('.msg.partner:not(.typing)').length>=3", timeout=60000)
@@ -74,10 +87,14 @@ async def main():
         # shadowing
         await page.click(".msg.partner >> nth=0 >> [data-act=shadow]")
         await page.wait_for_selector("dialog[open]")
-        await page.evaluate("window.__fakeSpeech = document.querySelector('#shadowTarget').textContent; shadowRecorder.stream = null")
-        await page.click("#shadowRec"); await page.wait_for_timeout(5500); await page.click("#shadowRec")
+        await page.evaluate(
+            "window.__fakeSpeech = document.querySelector('#shadowTarget').textContent; shadowRecorder.stream = null"
+        )
+        await page.click("#shadowRec")
+        await page.wait_for_timeout(5500)
+        await page.click("#shadowRec")
         await page.wait_for_selector(".score", timeout=60000)
-        print("shadow:", (await page.inner_text("#shadowResult")).replace("\n"," | "))
+        print("shadow:", (await page.inner_text("#shadowResult")).replace("\n", " | "))
         await page.screenshot(path=f"{OUT}/5-shadow.png")
         await page.keyboard.press("Escape")
         # summary
@@ -87,13 +104,22 @@ async def main():
         await page.screenshot(path=f"{OUT}/5b-summary.png")
         await page.keyboard.press("Escape")
         # hide-text mode + dark + mobile
-        await page.click("#showText"); await page.screenshot(path=f"{OUT}/6-hidden-text.png")
         await page.click("#showText")
-        await page.set_viewport_size({"width":390,"height":800}); await page.wait_for_timeout(300)
+        await page.screenshot(path=f"{OUT}/6-hidden-text.png")
+        await page.click("#showText")
+        await page.set_viewport_size({"width": 390, "height": 800})
+        await page.wait_for_timeout(300)
         await page.screenshot(path=f"{OUT}/7-mobile.png")
-        await page.click("#menuBtn"); await page.wait_for_timeout(400); await page.screenshot(path=f"{OUT}/8-mobile-menu.png")
-        await page.emulate_media(color_scheme="dark"); await page.click("#menuBtn"); await page.set_viewport_size({"width":1280,"height":820}); await page.wait_for_timeout(300)
+        await page.click("#menuBtn")
+        await page.wait_for_timeout(400)
+        await page.screenshot(path=f"{OUT}/8-mobile-menu.png")
+        await page.emulate_media(color_scheme="dark")
+        await page.click("#menuBtn")
+        await page.set_viewport_size({"width": 1280, "height": 820})
+        await page.wait_for_timeout(300)
         await page.screenshot(path=f"{OUT}/9-dark.png")
         print("console:", errors or "clean")
         await b.close()
+
+
 asyncio.run(main())

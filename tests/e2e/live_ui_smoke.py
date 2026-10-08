@@ -1,7 +1,12 @@
 """Browser test of live mode: getUserMedia is replaced by a stream that plays scripted
 learner utterances (TTS) with pauses, so the full browser audio path is exercised."""
-import asyncio, os, json
+
+import asyncio
+import json
+import os
+
 from playwright.async_api import async_playwright
+
 OUT = os.environ.get("PRAT_SHOTS", "scratch/shots")
 SCRIPT = """
 (() => {
@@ -24,12 +29,18 @@ SCRIPT = """
   };
 })();
 """
+
+
 async def main():
     os.makedirs(OUT, exist_ok=True)
     async with async_playwright() as p:
         b = await p.chromium.launch(channel="chromium", args=["--autoplay-policy=no-user-gesture-required"])
         ctx = await b.new_context(viewport={"width": 1280, "height": 860})
-        lines = [["Hei! Jeg heter Ali, og jeg bor i Oslo.", 7000], ["Jeg liker å gå på tur i marka.", 7000], ["Kan du snakke saktere?", 7000]]
+        lines = [
+            ["Hei! Jeg heter Ali, og jeg bor i Oslo.", 7000],
+            ["Jeg liker å gå på tur i marka.", 7000],
+            ["Kan du snakke saktere?", 7000],
+        ]
         await ctx.add_init_script(f"window.__lines = {json.dumps(lines)};" + SCRIPT)
         page = await ctx.new_page()
         errs = []
@@ -57,4 +68,6 @@ async def main():
         print("summary:", (await page.inner_text("#summaryBody")).replace("\n", " | ")[:300])
         print("console:", errs or "clean")
         await b.close()
+
+
 asyncio.run(main())

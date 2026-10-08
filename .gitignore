@@ -1,7 +1,13 @@
+# Python
 .venv/
-models/
-data/
-scratch/
 __pycache__/
 *.pyc
 .pytest_cache/
+.ruff_cache/
+
+# Downloaded models and local data (never committed)
+models/
+data/
+
+# Scratch output from experiments and e2e screenshots
+scratch/
