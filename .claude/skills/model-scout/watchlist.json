@@ -1,0 +1,19 @@
+{
+  "last_scan": "2026-10-08",
+  "authors": {
+    "NbAiLab": [],
+    "NbAiLabBeta": [],
+    "FredrikKarlssonSpeech": [],
+    "openbmb": ["voxcpm", "tts"],
+    "mlx-community": ["nb-whisper", "borealis", "voxcpm", "norw", "piper"],
+    "rhasspy": ["piper"]
+  },
+  "searches": ["nb-whisper", "borealis", "norwegian tts", "norwegian whisper", "norsk"],
+  "private_watch": {
+    "NbAiLab/nb-tts-voxcpm2-voices-2607": "VoxCPM2 fine-tune with two Oslo voices; very clear. Demo: spaces/NbAiLab/nb-tts-voxcpm2-voices-2607-demo",
+    "NbAiLab/nb-tts-norwegian-piper-trimmed": "Norwegian-trained Piper voice: would drop straight into prat/tts.py with no latency cost",
+    "NbAiLab/nb-tts-norwegian-voices": "MOSS-based Norwegian TTS (large)",
+    "NbAiLab/nb-tts-norwegian-moss-nano-trimmed": "MOSS nano Norwegian TTS (small; worth a speed test)",
+    "NbAiLab/nb-tts-norwegian-moss-local-trimmed": "MOSS local Norwegian TTS"
+  }
+}
